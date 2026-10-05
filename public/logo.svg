@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-label="Streamly">
+  <rect width="48" height="48" rx="13" fill="currentColor" fill-opacity="0.1"/>
+  <rect x="0.75" y="0.75" width="46.5" height="46.5" rx="12.25" stroke="currentColor" stroke-opacity="0.22" stroke-width="1.5"/>
+  <path d="M19 15.8c0-1.4 1.5-2.3 2.7-1.6l12.1 7.3c1.2.7 1.2 2.4 0 3.1l-12.1 7.3c-1.2.7-2.7-.2-2.7-1.6V15.8Z" fill="currentColor"/>
+  <path d="M13 18.5v11" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-opacity="0.55"/>
+</svg>

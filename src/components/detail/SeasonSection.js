@@ -7,6 +7,7 @@ import { toSlugId } from '@/lib/format';
 import Carousel from '@/components/ui/Carousel';
 import Dropdown from '@/components/ui/Dropdown';
 import EpisodeCard from '@/components/media/EpisodeCard';
+import UpcomingEpisodes from './UpcomingEpisodes';
 import { Skeleton } from '@/components/ui/Skeleton';
 
 /**
@@ -15,8 +16,11 @@ import { Skeleton } from '@/components/ui/Skeleton';
  * The season list itself comes from the show detail payload (server-rendered);
  * the episode list is fetched on demand as the visitor changes season, so a
  * 20-season show does not download every episode up front.
+ *
+ * `upcoming` is the server-rendered list of episodes that have not aired yet;
+ * the header shows the soonest one and opens the full list.
  */
-export default function SeasonSection({ show, initialSeason }) {
+export default function SeasonSection({ show, upcoming = [], initialSeason }) {
   const [seasonNumber, setSeasonNumber] = useState(
     initialSeason ?? show.seasons?.[0]?.season_number ?? 1,
   );
@@ -67,6 +71,8 @@ export default function SeasonSection({ show, initialSeason }) {
         </div>
 
         <div className="flex items-center gap-2">
+          <UpcomingEpisodes episodes={upcoming} />
+
           {/* Jumping straight to the current episode is the common case. */}
           <Dropdown
             label={`Season ${seasonNumber}`}

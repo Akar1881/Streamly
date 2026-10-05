@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import site from '@config/site';
-import { getShow } from '@/lib/tmdb/tv';
+import { getShow, getUpcomingEpisodes } from '@/lib/tmdb/tv';
 import { parseId } from '@/lib/format';
 import DetailHero from '@/components/detail/DetailHero';
 import DetailTabs, { ImageGallery, VideoGrid } from '@/components/detail/DetailTabs';
@@ -49,6 +49,9 @@ export async function generateMetadata({ params }) {
 export default async function TvDetailPage({ params }) {
   const show = await load(params);
 
+  // Non-essential: a dead season endpoint must not blank the whole page.
+  const upcoming = await getUpcomingEpisodes(show).catch(() => []);
+
   const tabs = [
     { id: 'overview', label: 'Overview', content: <Overview media={show} /> },
     {
@@ -69,7 +72,7 @@ export default async function TvDetailPage({ params }) {
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       <DetailHero media={show} />
 
-      {show.seasons.length > 0 && <SeasonSection show={show} />}
+      {show.seasons.length > 0 && <SeasonSection show={show} upcoming={upcoming} />}
 
       <div className="mt-2 grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
         <DetailTabs tabs={tabs} />

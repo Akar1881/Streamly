@@ -115,6 +115,45 @@ export async function getSeason(showId, seasonNumber) {
 }
 
 /**
+ * Every episode of this show that has not aired yet, soonest first.
+ *
+ * TMDB's show payload carries only the single `next_episode_to_air`, so the
+ * full list is assembled from the seasons that can still hold unreleased
+ * episodes: the one the next episode belongs to (a season airing weekly has a
+ * premiere date in the past) plus any season that has not premiered yet. Those
+ * extra requests are cached with the rest of the detail data, so only the
+ * first visitor after a revalidation pays for them.
+ *
+ * Returns `[]` for a show that has finished, so callers can simply hide the UI.
+ */
+export async function getUpcomingEpisodes({ id, seasons = [], nextEpisodeToAir } = {}) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const candidates = new Set();
+  if (nextEpisodeToAir?.season_number > 0) {
+    candidates.add(nextEpisodeToAir.season_number);
+  }
+  for (const season of seasons) {
+    // A season with no air date may simply not have been scheduled yet.
+    if (season.season_number > 0 && (!season.air_date || season.air_date >= today)) {
+      candidates.add(season.season_number);
+    }
+  }
+
+  // Cap the fan-out: a show with a dozen announced seasons is not worth a
+  // dozen requests, and the soonest seasons are the lowest-numbered ones.
+  const numbers = [...candidates].sort((a, b) => a - b).slice(0, 4);
+  const fetched = await Promise.all(
+    numbers.map((number) => getSeason(id, number).catch(() => null)),
+  );
+
+  return fetched
+    .flatMap((season) => season?.episodes ?? [])
+    .filter((episode) => episode.airDate && episode.airDate >= today)
+    .sort((a, b) => a.airDate.localeCompare(b.airDate) || a.episodeNumber - b.episodeNumber);
+}
+
+/**
  * Works out which episode comes before and after the current one, crossing
  * season boundaries. Drives the player's prev/next buttons.
  */

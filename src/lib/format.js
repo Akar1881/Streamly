@@ -27,6 +27,43 @@ export function formatDate(dateString) {
   return `${dd}/${mm}/${date.getFullYear()}`;
 }
 
+/**
+ * Whole days from today to a "YYYY-MM-DD" date. Negative means the date has
+ * already passed, 0 means it is today, and null means the string is missing or
+ * unparseable.
+ *
+ * Both ends are compared in UTC so the answer does not shift with the
+ * server's timezone — the same build always renders the same countdown.
+ */
+export function daysUntil(dateString) {
+  const match = String(dateString ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+
+  const target = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+
+  return Math.round((target - today) / 86400000);
+}
+
+/** "2026-10-16" -> "11 days until air" (today and tomorrow get their own wording). */
+export function formatAirCountdown(dateString) {
+  const days = daysUntil(dateString);
+  if (days === null) return '';
+  if (days < 0) return 'Aired';
+  if (days === 0) return 'Airs today';
+  if (days === 1) return 'Airs tomorrow';
+  return `${days} days until air`;
+}
+
+/** 42 -> "in 42 days", 1 -> "tomorrow", 0 -> "today", null/past -> "". */
+export function formatDaysAway(days) {
+  if (days === null || days === undefined || days < 0) return '';
+  if (days === 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  return `in ${days} days`;
+}
+
 /** 7.734 -> "7.7" — TMDB vote averages are noisy, always show one decimal. */
 export function formatRating(voteAverage) {
   if (!voteAverage) return '';

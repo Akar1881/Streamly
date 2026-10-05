@@ -16,6 +16,10 @@ export default function ReviewsPanel({ reviews = [], title }) {
 
   const shown = reviews.slice(0, site.detail.reviewsLimit);
 
+  // Past three reviews the panel would grow taller than the content beside it,
+  // so the list scrolls inside a box roughly three reviews high.
+  const scrollable = shown.length > 3;
+
   return (
     <section className="rounded-[var(--radius-card)] border border-line bg-card p-4">
       <header className="mb-4 flex items-center justify-between gap-3">
@@ -42,7 +46,11 @@ export default function ReviewsPanel({ reviews = [], title }) {
           </p>
         </div>
       ) : (
-        <ul className="space-y-4">
+        <ul
+          className={`space-y-4 ${
+            scrollable ? 'max-h-[26rem] overflow-y-auto pr-2' : ''
+          }`}
+        >
           {shown.map((review) => {
             const avatar = profileUrl(review.author_details?.avatar_path);
             const rating = review.author_details?.rating;

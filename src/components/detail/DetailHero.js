@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import site from '@config/site';
 import { backdropUrl, logoUrl } from '@/lib/images';
-import { formatRating, formatRuntime, joinMeta, toSlugId, year } from '@/lib/format';
+import { daysUntil, formatRating, formatRuntime, joinMeta, toSlugId, year } from '@/lib/format';
 import Icon from '@/components/ui/Icon';
 import Button from '@/components/ui/Button';
 import SaveButton from './SaveButton';
@@ -38,6 +38,15 @@ export default function DetailHero({ media }) {
     isTv ? `${media.numberOfSeasons} seasons` : formatRuntime(media.runtime),
     formatRating(media.voteAverage),
   ]);
+
+  // A film with a future release date, or one TMDB still lists as unfinished
+  // with no date, cannot be watched yet — offer a label instead of the CTA.
+  const releaseDays = daysUntil(media.releaseDate);
+  const movieUnreleased =
+    !isTv &&
+    (releaseDays === null
+      ? Boolean(media.status) && media.status !== 'Released'
+      : releaseDays > 0);
 
   return (
     <section className="relative">
@@ -91,15 +100,27 @@ export default function DetailHero({ media }) {
             <p className="mb-4 text-sm text-white/80">{meta}</p>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="primary"
-                size="lg"
-                href={watchHref}
-                icon="play"
-                className="!bg-white !text-black"
-              >
-                {isTv ? `Watch S${firstSeason}E1` : 'Watch now'}
-              </Button>
+              {movieUnreleased ? (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  icon="calendar"
+                  aria-disabled="true"
+                  className="!bg-white/10 !text-white/90 !border-white/20 cursor-default"
+                >
+                  Not released yet
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  href={watchHref}
+                  icon="play"
+                  className="!bg-white !text-black"
+                >
+                  {isTv ? `Watch S${firstSeason}E1` : 'Watch now'}
+                </Button>
+              )}
 
               {/* Actions repeat on phones, where the top-right row is hidden. */}
               <div className="flex items-center gap-2 sm:hidden">

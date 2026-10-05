@@ -1,8 +1,9 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getMovie } from '@/lib/tmdb/movies';
-import { formatRuntime, joinMeta, parseId, toSlugId, year } from '@/lib/format';
+import { daysUntil, formatRuntime, joinMeta, parseId, toSlugId, year } from '@/lib/format';
 import EmbedPlayer from '@/components/player/EmbedPlayer';
+import ReleaseNotice from '@/components/media/ReleaseNotice';
 import MediaRow from '@/components/media/MediaRow';
 import Icon from '@/components/ui/Icon';
 
@@ -32,6 +33,12 @@ export default async function WatchMoviePage({ params }) {
   const movie = await load(params);
   const detailHref = `/movies/${toSlugId(movie.id, movie.title)}`;
 
+  // A future release date, or a title TMDB still lists as unfinished and gives
+  // no date, has nothing to play yet — show the countdown instead of an empty
+  // player.
+  const days = daysUntil(movie.releaseDate);
+  const unreleased = days === null ? Boolean(movie.status) && movie.status !== 'Released' : days > 0;
+
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       <Link
@@ -43,7 +50,11 @@ export default async function WatchMoviePage({ params }) {
         Back to details
       </Link>
 
-      <EmbedPlayer media={movie} />
+      {unreleased ? (
+        <ReleaseNotice title={movie.title} date={movie.releaseDate} />
+      ) : (
+        <EmbedPlayer media={movie} />
+      )}
 
       <header className="mt-6">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{movie.title}</h1>

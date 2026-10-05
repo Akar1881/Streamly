@@ -1,8 +1,9 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getSeason, getShow } from '@/lib/tmdb/tv';
-import { formatDate, formatRuntime, joinMeta, parseId, toSlugId } from '@/lib/format';
+import { daysUntil, formatDate, formatRuntime, joinMeta, parseId, toSlugId } from '@/lib/format';
 import EmbedPlayer from '@/components/player/EmbedPlayer';
+import ReleaseNotice from '@/components/media/ReleaseNotice';
 import EpisodeNav from '@/components/player/EpisodeNav';
 import EpisodeCard from '@/components/media/EpisodeCard';
 import Carousel from '@/components/ui/Carousel';
@@ -53,6 +54,9 @@ export default async function WatchEpisodePage({ params }) {
   const slug = toSlugId(show.id, show.title);
   const detailHref = `/tv/${slug}`;
 
+  // A deep link to an episode that has not aired yet has nothing to play.
+  const unaired = (daysUntil(episode.airDate) ?? 0) > 0;
+
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       <Link
@@ -64,7 +68,16 @@ export default async function WatchEpisodePage({ params }) {
         Back to {show.title}
       </Link>
 
-      <EmbedPlayer media={show} season={seasonNumber} episode={episodeNumber} />
+      {unaired ? (
+        <ReleaseNotice
+          title={`S${seasonNumber}E${episodeNumber} · ${episode.name}`}
+          date={episode.airDate}
+          noun="episode"
+          participle="aired"
+        />
+      ) : (
+        <EmbedPlayer media={show} season={seasonNumber} episode={episodeNumber} />
+      )}
 
       <header className="mt-6">
         <p className="text-sm text-muted">

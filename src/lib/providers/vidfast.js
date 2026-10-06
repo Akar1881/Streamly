@@ -14,7 +14,11 @@
  *    title · poster          show the title / poster inside the player
  *    startAt                 start at a number of seconds
  *    theme                   player colour, hex without the '#' (e.g. 16A085)
- *    sub                     default subtitle, e.g. 'en'
+ *    sub                     default subtitle, e.g. 'en' — its own catalogue
+ *                            only, by language code. There is no way to hand
+ *                            it a subtitle file, which is why this provider
+ *                            reports `supportsSubtitles: false` and never
+ *                            receives the translated track.
  *    server                  which of the provider's own servers to use
  *    hideServer · fullscreenButton · chromecast
  *    nextButton + autoNext   TV only — its own next-episode button
@@ -41,4 +45,4 @@ function episode(base, { tmdbId, imdbId, season, episode, autoplay }) {
   });
 }
 
-export default { id: 'vidfast', movie, episode };
+export default { id: 'vidfast', supportsSubtitles: false, movie, episode };

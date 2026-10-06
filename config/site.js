@@ -289,6 +289,91 @@ const site = {
   },
 
   /* ------------------------------------------------------------------ */
+  /*  SUBTITLES — fetched, translated and served by this site            */
+  /* ------------------------------------------------------------------ */
+  /**
+   * There is no Kurdish subtitle source, so one is made: the English subtitle
+   * is fetched from Wyzie, translated line by line, and served back to the
+   * player as WebVTT.
+   *
+   * Both halves are rate limited — Wyzie's free key allows 1,000 requests a
+   * day, and a feature film spends about 2 of those plus ~25 translate calls —
+   * so every translated file is stored and reused for every later viewer of the
+   * same title. Only the first viewer of a title ever waits. The store is
+   * Cloudflare R2 when it is configured, and the filesystem in local
+   * development; see `cacheDir` below and .env.example.
+   *
+   * Requires `WYZIE_API_KEY` and `TRANSLATE_API_KEY` in `.env.local`. With
+   * either missing the whole feature switches itself off and playback is
+   * exactly what it was before: no subtitle, no error.
+   *
+   * Only providers that declare `supportsSubtitles` receive the track —
+   * currently vidsrc alone.
+   */
+  subtitles: {
+    /** Master switch. */
+    enabled: true,
+    /** ISO 639-1 code the source subtitle is fetched in. */
+    sourceLanguage: 'en',
+
+    /**
+     * What it is translated into. `code` is the ISO 639-1 the player is told
+     * about, `label` is what viewers see in the player's subtitle menu, and
+     * `nativeName` is used in the site's own UI. Add a second entry here (and
+     * a translation pass) to offer more than one.
+     */
+    target: {
+      code: 'ckb',
+      label: 'Kurdish (Sorani)',
+      nativeName: 'کوردی',
+    },
+
+    /**
+     * Where translated files are stored **when object storage is not
+     * configured** — in practice, in local development. Relative paths resolve
+     * against the project root.
+     *
+     * This is a fallback, not a deployment. A directory cannot serve a
+     * subtitle to a viewer's browser on a serverless host: the bundle is
+     * read-only and `/tmp` belongs to one instance, so the file written while
+     * answering one request is missing when the next lands elsewhere. Setting
+     * the R2 variables in .env switches the store over; see .env.example.
+     */
+    cacheDir: './tmp/subtitles',
+
+    /**
+     * Characters of subtitle text per translate request. The text rides in the
+     * request's query string, so this trades request count against URL length:
+     * higher means fewer requests (the translator is the rate-limited half)
+     * but a longer URL. ~3000 keeps a batch well under 8 KB once encoded.
+     */
+    batchChars: 3000,
+
+    /** Translate requests in flight at once. Higher finishes sooner, less politely. */
+    concurrency: 4,
+
+    /**
+     * Give up on a title after this long and play it without subtitles. The
+     * job keeps running in the background and is still stored for next time.
+     *
+     * Kept just under `waitMs` so the waiting screen hears the verdict from
+     * the server rather than reaching its own.
+     *
+     * Both are bounded above by the `maxDuration` set on the prepare route
+     * (60s): past that the platform kills the invocation outright, so a larger
+     * number does not buy the translation more time — it only delays the
+     * viewer hearing about a failure that has already happened.
+     */
+    timeoutMs: 50000,
+
+    /** How long the waiting screen holds on before it stops waiting. */
+    waitMs: 55000,
+
+    /** Offer a "play without subtitles" button on the waiting screen. */
+    allowSkip: true,
+  },
+
+  /* ------------------------------------------------------------------ */
   /*  FEATURES — turn whole areas of the site on or off                  */
   /* ------------------------------------------------------------------ */
   features: {

@@ -30,3 +30,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# translated subtitles (see config/site.js → subtitles.cacheDir)
+/tmp/

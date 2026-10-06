@@ -75,20 +75,33 @@ export default function HeroCarousel({ items }) {
         {/* ---------------- content ---------------- */}
         <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8 lg:p-10">
           <div className="max-w-2xl">
-            {logo ? (
+            {/*
+              The h1 stays in the DOM even when a logo stands in for it
+              visually, hidden with `sr-only` rather than dropped. Without this,
+              a hero title that has a TMDB logo takes the whole page's h1 with
+              it — and the home page is the one URL that most needs a heading.
+            */}
+            <h1
+              className={
+                logo
+                  ? 'sr-only'
+                  : 'mb-3 text-2xl font-bold text-white drop-shadow-lg sm:text-4xl lg:text-5xl'
+              }
+            >
+              {active.title}
+            </h1>
+
+            {/* Decorative: the h1 above already names this title. */}
+            {logo && (
               <div className="relative mb-3 h-16 w-48 sm:h-20 sm:w-64 lg:h-24 lg:w-80">
                 <Image
                   src={logo}
-                  alt={active.title}
+                  alt=""
                   fill
                   sizes="320px"
                   className="object-contain object-left drop-shadow-lg"
                 />
               </div>
-            ) : (
-              <h1 className="mb-3 text-2xl font-bold text-white drop-shadow-lg sm:text-4xl lg:text-5xl">
-                {active.title}
-              </h1>
             )}
 
             {/* meta pills */}

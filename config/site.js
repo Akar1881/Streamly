@@ -313,11 +313,34 @@ const site = {
     /** Include adult titles in browse and search results. */
     includeAdult: false,
 
-    /** Image CDN root and the sizes used in each context. */
+    /** Image CDN root. */
     imageBase: 'https://image.tmdb.org/t/p',
+
+    /**
+     * The size used in each context. These values are load-bearing for
+     * bandwidth: `next.config.mjs` sets `images.unoptimized`, so there is no
+     * `srcset` and every visitor downloads exactly this file no matter how
+     * wide their screen is. Sizes that exist on TMDB:
+     *
+     *   posters  w92  w154  w185  w342  w500  w780  original
+     *   backdrops/stills  w300  w780  w1280  original
+     *   profiles  w45  w185  h632  original
+     *   logos  w45  w92  w154  w185  w300  w500  original
+     *
+     * Grids are by far the highest-volume images on the site — a single browse
+     * page renders 20+ posters — so `poster` trades a little sharpness on
+     * high-DPI desktops for roughly half the bytes of `w500`.
+     */
     sizes: {
-      poster: 'w500',
-      backdrop: 'original',
+      poster: 'w342',
+      /**
+       * Hero banners at `w1280` (~150-300 KB). `original` on this slot was
+       * the single largest download on the site — 3840px backdrops at several
+       * MB each, eagerly loaded above the fold on every detail page and on
+       * the home hero. TMDB has no size between w1280 and original, so this
+       * is the largest sane step down.
+       */
+      backdrop: 'w1280',
       still: 'w300', //  episode thumbnails
       profile: 'w185', //  cast photos
       logo: 'w500', //  title logos on the hero

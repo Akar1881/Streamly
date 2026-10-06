@@ -79,7 +79,10 @@ function Pill({ children }) {
 }
 
 function Ticket({ media }) {
-  const poster = posterUrl(media.posterPath);
+  // Pinned rather than left to the default: social cards are rendered once and
+  // cached by the crawler, so they are worth the extra bytes. The grid default
+  // (`w342`) would look soft here at the size the ticket draws.
+  const poster = posterUrl(media.posterPath, 'w500');
   const rating = formatRating(media.voteAverage);
   const serial = serialFor(media);
   const meta = metaParts(media);

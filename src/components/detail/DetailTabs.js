@@ -143,13 +143,16 @@ export function VideoGrid({ videos }) {
             bg-card text-left transition-colors hover:bg-card-hover"
         >
           <div className="relative aspect-video">
+            {/* Served straight from YouTube's CDN — the global
+                `images.unoptimized` in next.config.mjs keeps it out of
+                Vercel's optimizer, which is why no `unoptimized` prop is
+                needed here any more. */}
             <Image
               src={`https://i.ytimg.com/vi/${video.key}/hqdefault.jpg`}
               alt={video.name}
               fill
               sizes="(max-width: 640px) 90vw, 33vw"
               className="object-cover"
-              unoptimized
             />
             <div className="absolute inset-0 grid place-items-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
               <span className="grid size-11 place-items-center rounded-full bg-white/90 text-black">

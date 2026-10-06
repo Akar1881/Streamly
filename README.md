@@ -6,6 +6,8 @@ accounts anywhere in the app.
 
 ---
 
+<img width="1920" height="941" alt="image" src="https://github.com/user-attachments/assets/dcf5ad83-13a1-4234-8979-1b4c15c96dfb" />
+
 ## Quick start
 
 ```bash

@@ -15,14 +15,20 @@
  *    tv-1399-s1e1-en-ckb.vtt     a specific episode
  *
  *  This module owns the keys and the name check; the storing itself is a
- *  backend. There are two, and which one is in use is a deployment question
+ *  backend. There are three, and which one is in use is a deployment question
  *  rather than a code one:
  *
- *    r2.js     object storage — what production runs on, because the *viewer's
- *              browser* fetches the file and needs a URL that is the same on
- *              every instance and outlives the request that wrote it.
+ *    blob.js   Vercel Blob — what production runs on, and the only one that
+ *              needs no payment method. The *viewer's browser* fetches the
+ *              file, so it has to be somewhere shared that outlives the
+ *              request which wrote it.
+ *    r2.js     Cloudflare R2 — the same job, for anyone with a card and more
+ *              than a gigabyte of subtitles. Charged nothing for egress.
  *    disk.js   the filesystem — what a laptop runs on, because it needs no
  *              account and the files are right there to read.
+ *
+ *  The first configured one wins, and `disk.js` is the fallback that is always
+ *  there.
  *
  *  `publicUrl` is the tell for which one is live: object storage can hand out a
  *  URL directly, a directory cannot, and the API routes use that to decide
@@ -31,6 +37,7 @@
  */
 
 import site from '@config/site';
+import * as blob from './blob';
 import * as disk from './disk';
 import * as r2 from './r2';
 
@@ -42,7 +49,9 @@ import * as r2 from './r2';
  * until it was restarted.
  */
 function backend() {
-  return r2.configured() ? r2 : disk;
+  if (blob.configured()) return blob;
+  if (r2.configured()) return r2;
+  return disk;
 }
 
 /**
@@ -116,5 +125,5 @@ export function publicUrl(name) {
 
 /** True when subtitles are stored somewhere every instance can see. */
 export function isShared() {
-  return r2.configured();
+  return backend() !== disk;
 }

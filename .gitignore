@@ -33,3 +33,4 @@ yarn-error.log*
 
 # translated subtitles (see config/site.js → subtitles.cacheDir)
 /tmp/
+.env*

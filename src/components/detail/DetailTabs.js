@@ -64,19 +64,31 @@ export default function DetailTabs({ tabs, initial = 'overview' }) {
 /*  Exported so the server components can compose them without duplication.    */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Tab panels are the tallest thing on a detail page: a franchise with 60
+ * images would push the credits and related rows miles down. Past a couple of
+ * rows of content each panel scrolls inside a fixed box instead — the same
+ * treatment `ReviewsPanel` gives its review list.
+ */
+const PANEL_SCROLL = 'max-h-[32rem] overflow-y-auto pr-2';
+
 /** A responsive image gallery of backdrops or posters. */
 export function ImageGallery({ images, aspect = 'video', emptyLabel = 'No images available.' }) {
   if (!images?.length) {
     return <p className="py-10 text-center text-sm text-muted">{emptyLabel}</p>;
   }
 
+  const shown = images.slice(0, 24);
+  // Two rows at the widest breakpoint; narrower screens scroll sooner.
+  const scrollable = shown.length > 8;
+
   return (
     <div
       className={`grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 ${
         aspect === 'video' ? '' : 'auto-rows-auto'
-      }`}
+      } ${scrollable ? PANEL_SCROLL : ''}`}
     >
-      {images.slice(0, 24).map((image) => {
+      {shown.map((image) => {
         const source =
           aspect === 'video' ? backdropUrl(image.file_path, 'w780') : posterUrl(image.file_path, 'w342');
 
@@ -132,8 +144,15 @@ export function VideoGrid({ videos }) {
     );
   }
 
+  // Two rows at the widest breakpoint; narrower screens scroll sooner.
+  const scrollable = videos.length > 6;
+
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div
+      className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 ${
+        scrollable ? PANEL_SCROLL : ''
+      }`}
+    >
       {videos.map((video) => (
         <button
           key={video.id}
@@ -177,6 +196,9 @@ export function CollectionPanel({ collection }) {
     return <p className="py-10 text-center text-sm text-muted">Not part of a collection.</p>;
   }
 
+  // Two rows at the widest breakpoint; narrower screens scroll sooner.
+  const scrollable = collection.items.length > 6;
+
   return (
     <div className="space-y-4">
       <div>
@@ -184,7 +206,11 @@ export function CollectionPanel({ collection }) {
         <p className="text-sm text-muted">{collectionMeta(collection)}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      <div
+        className={`grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 ${
+          scrollable ? PANEL_SCROLL : ''
+        }`}
+      >
         {collection.items.map((item) => (
           <PosterCard key={item.id} item={item} />
         ))}

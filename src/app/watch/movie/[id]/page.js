@@ -26,6 +26,12 @@ export async function generateMetadata({ params }) {
   return {
     title: `Watch ${movie.title}`,
     description: movie.overview,
+    // This page is an embedded player and nothing else. Indexing it would put
+    // a title-less frame in search results and invite it to compete with the
+    // detail page, which is the one worth ranking. `follow` keeps the links
+    // out of here counting towards that page. See `robots.js` for why this
+    // page is deliberately crawlable rather than Disallowed.
+    robots: { index: false, follow: true },
   };
 }
 

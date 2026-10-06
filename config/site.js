@@ -61,6 +61,12 @@ const site = {
      *
      * Set it to a file in `/public` (ideally 1200×630) only if you would rather
      * supply your own artwork.
+     *
+     * NOTE: a file-based `opengraph-image` belongs to the segment it sits in and
+     * is NOT inherited by child routes — `app/opengraph-image.js` covers `/` and
+     * nothing else. `src/app/layout.js` therefore also points `openGraph.images`
+     * at the generated card, so every other page inherits a share image too.
+     * Leave this empty unless you are replacing the artwork everywhere.
      */
     ogImage: '',
     /** Leave empty to omit the Twitter card author tag. */
@@ -70,6 +76,23 @@ const site = {
      * (adds `noindex, nofollow` to every page).
      */
     allowIndexing: true,
+
+    /**
+     * Proof that you own the site, for the search engines' webmaster tools.
+     *
+     * These are the codes the tools hand you when you add a site — paste them
+     * in, redeploy, then press Verify. Leaving one empty simply omits its tag;
+     * no blank `google-site-verification` is ever emitted.
+     *
+     * `google` is Google Search Console. `other` takes any engine that wants
+     * its own meta name — Bing is `{ 'msvalidate.01': '…' }`. The keys in
+     * `other` are written verbatim as the tag's `name`, so they must match
+     * exactly.
+     */
+    verification: {
+      google: '',
+      other: {},
+    },
   },
 
   /* ------------------------------------------------------------------ */
@@ -145,6 +168,9 @@ const site = {
       { label: 'Movies', href: '/movies', icon: 'clapperboard' },
       { label: 'TV Shows', href: '/tv', icon: 'tv-minimal' },
       { label: 'My List', href: '/my-list', icon: 'bookmark' },
+      // Five is the ceiling: MobileNav renders `nav.main.slice(0, 5)` into the
+      // bottom tab bar, so anything past this one would be invisible on phones.
+      { label: 'About', href: '/about', icon: 'info' },
     ],
     /** Small heading printed above the links. Empty string hides it. */
     heading: 'Main Navigation',
@@ -165,11 +191,59 @@ const site = {
      */
     socials: [
       // { label: 'Instagram', href: 'https://instagram.com/…', icon: 'at-sign' },
-      // { label: 'Telegram',  href: 'https://t.me/…',          icon: 'send' },
+      { label: 'Telegram', href: 'https://t.me/streamly_akar1881', icon: 'send' },
     ],
     /** Optional small print shown under the copyright. Empty string hides it. */
     disclaimer:
       'This site does not host any files. All media is provided by third-party services.',
+  },
+
+  /* ------------------------------------------------------------------ */
+  /*  ABOUT PAGE — what this is, who made it, where to follow along      */
+  /* ------------------------------------------------------------------ */
+  /**
+   * Everything on `/about`. It is all copy, so it lives here rather than in the
+   * component — the same rule as the rest of this file.
+   */
+  about: {
+    /** Shown above the fold. */
+    intro:
+      'Streamly is a place to find something to watch — browse what is popular, ' +
+      'save a list, and play it without hunting through a dozen sites first.',
+
+    /**
+     * The notice that the site is unfinished. Delete this block once it is not
+     * true; the page simply stops rendering the callout.
+     */
+    status: {
+      title: 'Still being built',
+      message:
+        'Streamly is under development and has not been fully released yet. ' +
+        'Some things will change, and some things will break. Thanks for being here early.',
+    },
+
+    /**
+     * The credit line, and the only personal detail on the page.
+     *
+     * A handle, deliberately not a name, a location or a phone number. This
+     * page is public and indexed, so anything written here is copied by
+     * scrapers within days. Telegram reaches the same person and can be
+     * blocked when it needs to be.
+     */
+    maker: {
+      credit: 'Akar1881',
+    },
+
+    /** The community channel — the one way to reach the site's owner. */
+    community: {
+      title: 'Join the Telegram community',
+      message:
+        'Daily news and announcements about the site — new features, downtime, ' +
+        'and whatever is being worked on next — all get posted there first. ' +
+        'It is also the way to get in touch.',
+      action: 'Join @streamly_akar1881',
+      href: 'https://t.me/streamly_akar1881',
+    },
   },
 
   /* ------------------------------------------------------------------ */

@@ -21,6 +21,77 @@ const brandFont = Outfit({
   display: 'swap',
 });
 
+/**
+ * The owner-verification tags, or `undefined` when none are configured.
+ *
+ * Built rather than passed straight through so an empty string in the config
+ * omits its tag instead of emitting `<meta name="google-site-verification"
+ * content="">`, which is a claim of ownership with no proof in it.
+ */
+function verification() {
+  const configured = site.seo.verification ?? {};
+  const tags = {};
+
+  if (configured.google) tags.google = configured.google;
+  if (configured.other && Object.keys(configured.other).length) tags.other = configured.other;
+
+  return Object.keys(tags).length ? tags : undefined;
+}
+
+/** The site's origin without a trailing slash; mirrors `robots.js` and `cards.jsx`. */
+function siteBase() {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SITE_URL?.trim()).origin;
+  } catch {
+    return 'http://localhost:3000';
+  }
+}
+
+/**
+ * The site-wide social share image, as a URL Next.js can resolve against
+ * `metadataBase`.
+ *
+ * This exists because a file-based `opengraph-image` only covers the segment it
+ * lives in. `src/app/opengraph-image.js` is in the root segment, so it supplies
+ * the richer tags on `/` — type, width, height, alt — and outranks the metadata
+ * object there. Child routes like `/about` inherit nothing from it, so this
+ * gives them the same card, just with fewer tags. Without it, sharing any page
+ * other than the home page produces a bare link with no preview image.
+ *
+ * A configured `seo.ogImage` wins, since that is the deliberate override.
+ */
+function socialImage() {
+  return site.seo.ogImage || '/opengraph-image';
+}
+
+/**
+ * Site-level structured data.
+ *
+ * `SearchAction` is what lets a search engine offer your own search box under
+ * the result rather than only a link. The placeholder and the `query-input`
+ * string are part of the schema.org vocabulary and must be spelled exactly;
+ * `q` is the parameter `SearchBar.js` and `/search` actually use.
+ */
+function websiteSchema() {
+  const base = siteBase();
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: site.brand.name,
+    description: site.seo.description,
+    url: base,
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: {
+        '@type': 'EntryPoint',
+        urlTemplate: `${base}/search?q={search_term_string}`,
+      },
+      'query-input': 'required name=search_term_string',
+    },
+  };
+}
+
 export const metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
   title: {
@@ -32,19 +103,20 @@ export const metadata = {
   applicationName: site.brand.name,
   icons: { icon: site.brand.favicon },
   robots: site.seo.allowIndexing ? { index: true, follow: true } : { index: false, follow: false },
+  verification: verification(),
   openGraph: {
     type: 'website',
     siteName: site.brand.name,
     title: site.seo.defaultTitle,
     description: site.seo.description,
-    images: site.seo.ogImage ? [site.seo.ogImage] : undefined,
+    images: [socialImage()],
   },
   twitter: {
     card: 'summary_large_image',
     title: site.seo.defaultTitle,
     description: site.seo.description,
     creator: site.seo.twitterHandle || undefined,
-    images: site.seo.ogImage ? [site.seo.ogImage] : undefined,
+    images: [socialImage()],
   },
 };
 
@@ -71,6 +143,11 @@ export default function RootLayout({ children }) {
         <style dangerouslySetInnerHTML={{ __html: themeCss() }} />
         {/* Applies the saved theme before first paint, preventing a flash */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript() }} />
+        {/* Structured data is a JSON string, not markup we control the shape of */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema()) }}
+        />
       </head>
       <body className="bg-bg text-text antialiased">
         <AppShell>{children}</AppShell>

@@ -45,6 +45,9 @@ export async function generateMetadata({ params }) {
   return {
     title: `${show.title} — S${seasonNumber}E${episodeNumber}`,
     description: episode.overview || show.overview,
+    // Player page — see the matching note in the movie watch route and the
+    // explanation in `robots.js`.
+    robots: { index: false, follow: true },
   };
 }
 

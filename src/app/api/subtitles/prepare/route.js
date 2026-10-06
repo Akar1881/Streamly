@@ -54,8 +54,8 @@ const NO_STORE = { 'Cache-Control': 'no-store' };
  * configured site URL is the correct base; falling back to the request's own
  * origin keeps `next dev` working with nothing configured.
  */
-function subtitleUrl(request, fileName) {
-  const direct = publicUrl(fileName);
+async function subtitleUrl(request, fileName) {
+  const direct = await publicUrl(fileName);
   if (direct) return direct;
 
   const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -92,7 +92,7 @@ function readTarget(source) {
 }
 
 /** The client-facing view of a job. */
-function toResponse(request, job) {
+async function toResponse(request, job) {
   return NextResponse.json(
     {
       status: job.status,
@@ -104,7 +104,7 @@ function toResponse(request, job) {
       key: job.key,
       /** What the waiting screen calls the subtitle it is preparing. */
       label: site.subtitles.target.label,
-      url: job.fileName ? subtitleUrl(request, job.fileName) : null,
+      url: job.fileName ? await subtitleUrl(request, job.fileName) : null,
     },
     { headers: NO_STORE },
   );

@@ -117,8 +117,14 @@ export async function writeCached(name, contents) {
 /**
  * A URL the viewer's browser can fetch this file from, or null when the
  * backend cannot serve one and the API route has to do it.
+ *
+ * Async because asking object storage where a file lives is a request. It is
+ * also load-bearing that this is awaited: an unawaited promise is *truthy*, so
+ * a caller that forgot would skip the "no URL, serve it ourselves" fallback and
+ * put an object where a string belongs — which reaches the player as a subtitle
+ * URL of `{}`.
  */
-export function publicUrl(name) {
+export async function publicUrl(name) {
   if (!isSafeName(name)) return null;
   return backend().url(name);
 }

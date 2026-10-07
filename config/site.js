@@ -341,25 +341,101 @@ const site = {
   /* ------------------------------------------------------------------ */
   player: {
     /**
-     * Playback servers offered in the switcher. The first entry is the default.
+     * Where playback comes from, in the order they are offered. The first is
+     * the default.
      *
-     * `provider` picks the URL format and must be one of the modules in
-     * `src/lib/providers/` (currently `vidsrc` and `vidfast`). `base` is that
-     * provider's mirror root — list one provider twice with two bases and you
-     * get a fallback mirror, no code change. `id` and `label` are yours.
+     * Each id names a module in `src/lib/providers/`. Adding one is a module
+     * and a line in that directory's `PROVIDERS` map — the worked example and
+     * the exact shape to return are in the comment at the top of
+     * `src/lib/providers/index.js`. Two or more ids makes the switcher appear
+     * under the player; one makes no switcher at all.
      *
-     * Two or more entries makes the switcher appear under the player.
+     * **Empty is a valid state.** With nothing listed the watch pages say no
+     * source is configured rather than showing a player that cannot play.
      */
-    servers: [
-      { id: 'vidsrc', label: 'Server 1', provider: 'vidsrc', base: 'https://vidsrc.sh/embed' },
-      { id: 'vidfast', label: 'Server 2', provider: 'vidfast', base: 'https://vidfast.vc' },
-    ],
+    providers: ['rivestream'],
     /** Start playing as soon as the page opens. */
     autoplay: true,
     /** Offer a "Next episode" button on TV playback pages. */
     episodeNav: true,
     /** Remember where the viewer left off (stored in their browser only). */
     saveProgress: true,
+
+    /**
+     * How a subtitle looks, and what the viewer is allowed to change about it.
+     *
+     * `defaults` is the appearance a first-time viewer gets; `options` is the
+     * list of choices each control in the customization panel offers. Both live
+     * here rather than in the component because they are surface decisions, and
+     * the panel renders `options` instead of hard-coding its own rows — adding a
+     * size or a colour is a line here, not a code change.
+     *
+     * Colours are plain CSS, so a token like `var(--accent)` is as valid as
+     * `#fff`. `fonts[].stack` is the full font-family value, which is why the
+     * site font is spelled as its variable.
+     */
+    subtitleStyle: {
+      defaults: {
+        font: 'brand',
+        size: 'md',
+        color: '#ffffff',
+        opacity: 1,
+        /** none | shadow | outline | raised — see `SubtitleOverlay.js`. */
+        edge: 'outline',
+        /** black | gray | none — the plate behind the text. */
+        background: 'black',
+        /** Blur radius of that plate, in pixels. Has no effect without one. */
+        blur: 0,
+        /** Distance up from the bottom of the frame, as a percentage. */
+        position: 10,
+        align: 'center',
+      },
+
+      options: {
+        /**
+         * The Kurdish track is the reason this list exists: Outfit has no
+         * Arabic-script glyphs, so a Sorani viewer needs a stack that does.
+         */
+        fonts: [
+          { value: 'brand', label: 'Outfit', stack: 'var(--font-brand), system-ui, sans-serif' },
+          { value: 'system', label: 'System', stack: 'system-ui, -apple-system, sans-serif' },
+          {
+            value: 'naskh',
+            label: 'Naskh (Kurdish)',
+            stack: "'Noto Naskh Arabic', 'Segoe UI', Tahoma, system-ui, sans-serif",
+          },
+        ],
+        sizes: [
+          { value: 'xs', label: 'XS', scale: 0.75 },
+          { value: 'sm', label: 'S', scale: 0.88 },
+          { value: 'md', label: 'M', scale: 1 },
+          { value: 'lg', label: 'L', scale: 1.16 },
+          { value: 'xl', label: 'XL', scale: 1.34 },
+        ],
+        edges: [
+          { value: 'none', label: 'None' },
+          { value: 'shadow', label: 'Drop Shadow' },
+          { value: 'outline', label: 'Outline' },
+          { value: 'raised', label: 'Raised' },
+        ],
+        backgrounds: [
+          { value: 'black', label: 'Black', color: 'rgba(0, 0, 0, 0.75)' },
+          { value: 'gray', label: 'Gray', color: 'rgba(56, 56, 56, 0.75)' },
+          { value: 'none', label: 'Transparent', color: 'transparent' },
+        ],
+        aligns: [
+          { value: 'left', label: 'Left' },
+          { value: 'center', label: 'Center' },
+          { value: 'right', label: 'Right' },
+        ],
+        colors: [
+          { value: '#ffffff', label: 'White' },
+          { value: '#ffe873', label: 'Yellow' },
+          { value: '#c3e88d', label: 'Green' },
+          { value: '#82aaff', label: 'Blue' },
+        ],
+      },
+    },
   },
 
   /* ------------------------------------------------------------------ */
@@ -381,8 +457,9 @@ const site = {
    * either missing the whole feature switches itself off and playback is
    * exactly what it was before: no subtitle, no error.
    *
-   * Only providers that declare `supportsSubtitles` receive the track —
-   * currently vidsrc alone.
+   * The translated track is handed to the player as an ordinary subtitle file,
+   * so it works with every provider — what a provider supplies is the video,
+   * and the subtitle is ours to attach. See `player.providers`.
    */
   subtitles: {
     /** Master switch. */
@@ -401,6 +478,19 @@ const site = {
       label: 'Kurdish (Sorani)',
       nativeName: 'کوردی',
     },
+
+    /**
+     * Turn the translated track on as soon as it is ready, without the viewer
+     * having to open the captions menu.
+     *
+     * On a Sorani site this is the point of the translation, so it is on. It
+     * also decides whether the player waits: with it on, a title whose
+     * translation has never been made shows the progress screen while it is
+     * prepared, so the viewer starts the film with subtitles rather than
+     * gaining them mid-scene. With it off nothing is waited for — the player
+     * starts immediately and the track is there to switch on.
+     */
+    autoSelect: true,
 
     /**
      * Where translated files are stored **when object storage is not

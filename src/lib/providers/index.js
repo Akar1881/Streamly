@@ -3,94 +3,147 @@
  *  PLAYBACK PROVIDERS
  * ============================================================================
  *
- *  The rest of the app asks this module for "the embed URL for this title" and
- *  gets a string back; it never needs to know which provider is in use.
+ *  A provider answers one question: "the visitor asked for this title — what
+ *  should the player play?" It is handed the identifiers the app already has
+ *  and returns the URLs `VideoPlayer` takes. It is the only part of the app
+ *  that knows where media comes from; nothing else does, and nothing else has
+ *  to change when a provider is added, swapped or removed.
  *
- *  Which providers appear is decided by `config/site.js` → `player.servers`.
- *  Each entry names a `provider` (which URL format to use) and a `base` (which
- *  mirror of it) — list one provider twice with two bases and you get two
- *  entries in the switcher for free.
+ *  ---------------------------------------------------------------------------
+ *  Adding one
+ *  ---------------------------------------------------------------------------
  *
- *  To add one, drop a module next to this file exporting `{ id, movie, episode }`
- *  and register it in `PROVIDERS` below.
+ *    1. Write a module in this directory:
+ *
+ *         export default {
+ *           id: 'example',              // matches the entry in config/site.js
+ *           label: 'Example',           // what the switcher calls it
+ *
+ *           async resolve({ mediaType, tmdbId, imdbId, season, episode, signal }) {
+ *             const found = await lookItUp(...);        // sync is fine too
+ *             if (!found) return null;                  // nothing for this title
+ *
+ *             return {
+ *               sources: [{ src: found.hls, type: 'application/x-mpegURL' }],
+ *               tracks: [{ src: found.subtitles, label: 'English', lang: 'en' }],
+ *               poster: found.poster,                   // optional
+ *             };
+ *           },
+ *         };
+ *
+ *    2. Import it below and add it to `PROVIDERS`.
+ *    3. Add its `id` to `player.providers` in `config/site.js`.
+ *
+ *  That is the whole integration. `PlayerStage` asks for a playback and hands
+ *  the result straight to the player; there is no third step.
+ *
+ *  ---------------------------------------------------------------------------
+ *  What `resolve` is given, and what it returns
+ *  ---------------------------------------------------------------------------
+ *
+ *  Given:
+ *    mediaType  'movie' | 'tv'
+ *    tmdbId     the TMDB id — always present
+ *    imdbId     movies only; TMDB does not return one for shows
+ *    season     episodes only
+ *    episode    episodes only
+ *    signal     an AbortSignal, aborted when the page moves on. Pass it to any
+ *               `fetch` you do so a provider that is slow to answer a title the
+ *               visitor has already left does not keep running.
+ *
+ *  Returned:
+ *    sources  required, at least one. `{ src, type?, label?, headers? }`, played
+ *             in order. `type` is a MIME type; leave it out and the player picks
+ *             the engine from the URL — `application/x-mpegURL` for an .m3u8,
+ *             `video/mp4` for anything else. `headers` are sent with the
+ *             manifest and every segment, for a host that requires them; the
+ *             browser will only let a page set names that are not on its
+ *             forbidden list, so `Authorization` and custom `X-…` headers work
+ *             and `Referer` / `Origin` / `User-Agent` are dropped no matter
+ *             what is passed. See `headerConfig` in `src/lib/player/source.js`.
+ *    tracks   optional subtitle files for the captions menu.
+ *             `{ src, label, lang?, default? }`. `default: true` is the one the
+ *             player switches on by itself.
+ *    poster   optional image URL, overriding the page's own artwork.
+ *
+ *  Returning `null` means "nothing here": the watch page shows its no-source
+ *  panel, and the viewer can try another configured provider from the
+ *  switcher. Use it for an ordinary miss — a title this provider does not
+ *  carry is not an error. **Throw** only for a genuine failure worth putting
+ *  in front of the viewer.
  * ============================================================================
  */
 
 import site from '@config/site';
-import vidsrc from './vidsrc';
-import vidfast from './vidfast';
-
-/** Keyed by the `provider` field on each entry in `player.servers`. */
-const PROVIDERS = { vidsrc, vidfast };
-
-/** Every configured server, for rendering the switcher. */
-export function listServers() {
-  return site.player.servers;
-}
-
-/** The server object for an id, falling back to the first configured server. */
-export function getServer(serverId) {
-  const servers = site.player.servers;
-  return servers.find((server) => server.id === serverId) ?? servers[0];
-}
-
-/** The provider module behind a configured server, or undefined. */
-function providerFor(server) {
-  // `provider` doubles as the provider key for entries written before the
-  // field existed.
-  if (!server) return undefined;
-  return PROVIDERS[server.provider ?? server.id];
-}
+import rivestream from './rivestream'
 
 /**
- * Whether a server can play a subtitle file we hand it.
+ * Every implemented provider, keyed by its `id`.
  *
- * Providers differ: vidsrc takes a `sub_url` and plays any WebVTT; VidFast
- * only selects from its own built-in tracks. The UI uses this to say so rather
- * than silently dropping the subtitle when the viewer switches servers.
+ * Empty until you add one — see the example at the top of this file. An id
+ * listed in `config/site.js` with no module here is skipped rather than
+ * crashing the watch page, so a typo costs a switcher entry, not the site.
  */
-export function serverSupportsSubtitles(serverId) {
-  return providerFor(getServer(serverId))?.supportsSubtitles === true;
+const PROVIDERS = { rivestream };
+
+/** Every configured provider that actually exists, in config order. */
+export function listProviders() {
+  return site.player.providers
+    .map((id) => PROVIDERS[id])
+    .filter(Boolean)
+    .map(({ id, label }) => ({ id, label: label ?? id }));
+}
+
+/** The module behind an id, or undefined if nothing is registered for it. */
+export function getProvider(id) {
+  return PROVIDERS[id];
 }
 
 /**
- * Embed URL for a title or an episode on a given server, or `null` when no URL
- * can be built — no servers configured, an unknown provider, or an id the
- * provider needs and we do not have.
+ * Asks one provider for what to play.
  *
- * @param {object}  request
+ * @param {object} request
+ * @param {string}  request.providerId
  * @param {'movie'|'tv'} request.mediaType
  * @param {number|string} request.tmdbId
- * @param {string}  [request.imdbId]  movies only — TMDB does not return it for shows
+ * @param {string}  [request.imdbId]
  * @param {number}  [request.season]
  * @param {number}  [request.episode]
- * @param {string}  [request.serverId]
- * @param {object}  [request.subtitle]  `{ url, label, lang }` for servers that
- *                                      accept one; ignored by those that do not
+ * @param {AbortSignal} [request.signal]
+ * @returns {Promise<{providerId: string, label: string, sources: Array, tracks: Array, poster: string|null}|null>}
+ *          `null` when the provider is unknown, has nothing, or came back with
+ *          an empty `sources` list — all three mean the same thing to the
+ *          caller, so they are flattened into one answer here rather than
+ *          leaving every caller to check for themselves.
  */
-export function embedUrl({ mediaType, tmdbId, imdbId, season, episode, serverId, subtitle }) {
-  const server = getServer(serverId);
-  if (!server) return null;
+export async function resolvePlayback({
+  providerId,
+  mediaType,
+  tmdbId,
+  imdbId,
+  season,
+  episode,
+  signal,
+}) {
+  const provider = PROVIDERS[providerId];
+  if (!provider?.resolve) return null;
 
-  const provider = providerFor(server);
-  if (!provider) return null;
-
-  // A trailing slash on the configured base would produce a doubled-up path.
-  const base = String(server.base).replace(/\/+$/, '');
-  const autoplay = Boolean(site.player.autoplay);
-
-  // Withheld from providers that cannot use one, rather than trusting every
-  // provider module to ignore an option it does not know.
-  const options = {
+  const playback = await provider.resolve({
+    mediaType,
     tmdbId,
     imdbId,
     season,
     episode,
-    autoplay,
-    subtitle: provider.supportsSubtitles ? subtitle : null,
-  };
+    signal,
+  });
 
-  return mediaType === 'tv'
-    ? provider.episode(base, options)
-    : provider.movie(base, options);
+  if (!playback?.sources?.length) return null;
+
+  return {
+    providerId,
+    label: provider.label ?? providerId,
+    sources: playback.sources,
+    tracks: playback.tracks ?? [],
+    poster: playback.poster ?? null,
+  };
 }

@@ -1,9 +1,10 @@
 /**
  * Builds a provider's query string, dropping anything empty.
  *
- * Every provider spells its options differently — vidsrc wants `autoplay=1`,
- * VidFast wants `autoPlay=true` — so the provider modules decide the keys and
- * this only handles the mechanics.
+ * Providers spell their options differently — one wants `autoplay=1`, another
+ * `autoPlay=true`, a third nothing at all — so each provider module decides the
+ * keys and this only handles the mechanics. Kept here, next to the providers,
+ * because it is the one bit of URL-building they all end up wanting.
  */
 export function withQuery(url, params) {
   const query = new URLSearchParams();

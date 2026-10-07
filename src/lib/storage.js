@@ -14,6 +14,7 @@ const KEYS = {
   myList: 'streamly:my-list',
   progress: 'streamly:progress',
   theme: 'streamly:theme',
+  playerSettings: 'streamly:player',
 };
 
 /** Lets components re-render when another tab (or component) changes storage. */
@@ -192,6 +193,33 @@ export function setStoredTheme(mode) {
   } catch {
     /* ignore */
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  PLAYER PREFERENCES                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How the viewer likes their subtitles, as the last object written.
+ *
+ * Returned raw rather than merged with the defaults in `config/site.js`: this
+ * layer does not know what a valid subtitle size is, and a stored object from an
+ * older version of the site may be missing keys or hold values that no longer
+ * exist. Reconciling that is `src/lib/player/settings.js`, which owns the shape.
+ *
+ * @returns {object|null}
+ */
+export function getPlayerSettings() {
+  const stored = read(KEYS.playerSettings, null);
+  return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : null;
+}
+
+export function setPlayerSettings(settings) {
+  write(KEYS.playerSettings, settings);
+}
+
+export function clearPlayerSettings() {
+  write(KEYS.playerSettings, null);
 }
 
 export { KEYS as STORAGE_KEYS };

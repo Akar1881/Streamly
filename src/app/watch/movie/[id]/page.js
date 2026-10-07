@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getMovie } from '@/lib/tmdb/movies';
 import { daysUntil, formatRuntime, joinMeta, parseId, toSlugId, year } from '@/lib/format';
-import EmbedPlayer from '@/components/player/EmbedPlayer';
+import PlayerStage from '@/components/player/PlayerStage';
 import ReleaseNotice from '@/components/media/ReleaseNotice';
 import MediaRow from '@/components/media/MediaRow';
 import Icon from '@/components/ui/Icon';
@@ -59,7 +59,7 @@ export default async function WatchMoviePage({ params }) {
       {unreleased ? (
         <ReleaseNotice title={movie.title} date={movie.releaseDate} />
       ) : (
-        <EmbedPlayer media={movie} />
+        <PlayerStage media={movie} />
       )}
 
       <header className="mt-6">

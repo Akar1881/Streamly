@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getSeason, getShow } from '@/lib/tmdb/tv';
 import { daysUntil, formatDate, formatRuntime, joinMeta, parseId, toSlugId } from '@/lib/format';
-import EmbedPlayer from '@/components/player/EmbedPlayer';
+import PlayerStage from '@/components/player/PlayerStage';
 import ReleaseNotice from '@/components/media/ReleaseNotice';
 import EpisodeNav from '@/components/player/EpisodeNav';
 import EpisodeCard from '@/components/media/EpisodeCard';
@@ -79,7 +79,7 @@ export default async function WatchEpisodePage({ params }) {
           participle="aired"
         />
       ) : (
-        <EmbedPlayer media={show} season={seasonNumber} episode={episodeNumber} />
+        <PlayerStage media={show} season={seasonNumber} episode={episodeNumber} />
       )}
 
       <header className="mt-6">

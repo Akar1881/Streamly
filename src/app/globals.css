@@ -143,6 +143,61 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+ *  PLAYER SUBTITLES
+ *
+ *  The cue is painted as text rather than through the browser's own `::cue`,
+ *  because the subtitle customization panel needs things `::cue` cannot express
+ *  (a blurred plate, a raised edge, a vertical position). Every value below
+ *  comes from a custom property that `src/lib/player/settings.js` writes onto
+ *  the overlay's wrapper, so changing the appearance restyles this element
+ *  instead of re-rendering it.
+ * ------------------------------------------------------------------------- */
+@layer components {
+  /* The band the cue sits in. `--cue-bottom` is the vertical position. */
+  .player-cue-layer {
+    position: absolute;
+    inset-inline: 0;
+    bottom: var(--cue-bottom, 10%);
+    padding-inline: 1rem;
+    text-align: var(--cue-align, center);
+  }
+
+  .player-cue {
+    /* inline-block so the layer's `text-align` places the whole cue left,
+       centre or right, while the lines inside stay aligned the same way. */
+    display: inline-block;
+    max-width: min(100%, 42rem);
+    font-family: var(--cue-font, system-ui, sans-serif);
+    font-size: calc(1.15rem * var(--cue-scale, 1));
+    line-height: 1.35;
+    font-weight: 500;
+    color: var(--cue-color, #fff);
+    opacity: var(--cue-opacity, 1);
+    /* Deliberately NOT `text-wrap: balance`. Balance re-wraps the lines inside
+       a box that was already sized by the greedy wrap, so both lines come out
+       shorter than the plate and the plate keeps a hand-span of empty grey on
+       each side of the text. The plate is only as wide as the text when the
+       lines fill it. */
+    /* Every cue is its own bidi paragraph, so a Kurdish line and a Latin
+       fragment on the same screen each run the right way. */
+    unicode-bidi: plaintext;
+    text-shadow: var(--cue-shadow, none);
+    /* A zero-width stroke is a no-op, so this is always safe to set. Firefox
+       aliases -webkit-text-stroke, so it is not Safari-only in practice. */
+    -webkit-text-stroke: var(--cue-stroke, 0em) rgba(0, 0, 0, 0.9);
+    /* Draws the stroke behind the glyph rather than over it. Without this the
+       outline eats into the letterforms — which matters most for the Kurdish
+       track, the one this site exists to serve. */
+    paint-order: stroke fill;
+    padding: 0.2em 0.55em;
+    border-radius: 0.3em;
+    background: var(--cue-bg, transparent);
+    -webkit-backdrop-filter: blur(var(--cue-blur, 0px));
+    backdrop-filter: blur(var(--cue-blur, 0px));
+  }
+}
+
 @keyframes skeleton-shimmer {
   0% {
     background-position: 100% 50%;

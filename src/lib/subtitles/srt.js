@@ -150,6 +150,11 @@ export function toVtt(cues, { header } = {}) {
   if (header) parts.push(`NOTE ${header}`);
 
   for (const cue of cues) {
+    // A cue can come back with no text when a translated sentence was shorter
+    // than the run of cues it replaced — see `spreadAcrossCues`. Its words are
+    // already on screen in the cue before it, so the timing is simply dropped.
+    if (!cue.text) continue;
+
     parts.push(
       `${formatTimestamp(cue.startMs)} --> ${formatTimestamp(cue.endMs)}\n${wrapText(cue.text)}`,
     );

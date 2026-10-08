@@ -98,18 +98,27 @@ export default function PlayerControls({
   // The label is repeated as `aria-label` because hiding it takes it out of the
   // accessibility tree — without it these three buttons would be nameless to a
   // screen reader on exactly the screens where they have no visible text.
-  const menuButton = (id, text, { icon, compactIcon }) => (
+  //
+  // `ariaLabel` overrides that repetition for the one button whose visible word
+  // is a value rather than a name: "Kurdish (Sorani)" tells a screen reader
+  // which subtitle, and says nothing about what pressing the button does.
+  //
+  // The text is capped and ellipsised because it is no longer one of three
+  // fixed words — a source is free to hand us a long track name, and a label
+  // that pushes the fullscreen button off the edge is worse than a shortened
+  // one. The full name is still in the accessible label and the captions menu.
+  const menuButton = (id, text, { icon, compactIcon, ariaLabel = text }) => (
     <button
       type="button"
       onClick={() => onOpenMenu(openMenu === id ? null : id)}
       aria-expanded={openMenu === id}
       aria-haspopup="dialog"
-      aria-label={text}
+      aria-label={ariaLabel}
       className={`${TEXT_BUTTON} ${openMenu === id ? 'bg-white/15 text-white' : 'text-white/85'}`}
     >
       {icon && <Icon name={icon} size={15} className="hidden sm:block" />}
       <Icon name={compactIcon ?? icon} size={19} className="sm:hidden" />
-      <span className="hidden sm:inline">{text}</span>
+      <span className="hidden max-w-36 truncate sm:inline">{text}</span>
     </button>
   );
 
@@ -191,6 +200,9 @@ export default function PlayerControls({
         {menuButton('captions', captionsLabel, {
           icon: captionsOn ? 'captions' : 'captions-off',
           compactIcon: captionsOn ? 'captions' : 'captions-off',
+          // Off, `captionsLabel` is already the word "Captions"; on, it is the
+          // track's name and needs the word put back in front of it.
+          ariaLabel: captionsOn ? `Captions: ${captionsLabel}` : captionsLabel,
         })}
         {menuButton('quality', qualityLabel, { compactIcon: 'gauge' })}
         {menuButton('speed', speedLabel, { compactIcon: 'zap' })}

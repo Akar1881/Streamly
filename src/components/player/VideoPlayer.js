@@ -665,6 +665,16 @@ export default function VideoPlayer({
 
   const speedLabel = rate === 1 ? 'Speed' : `${rate}×`;
 
+  // The captions button names the track that is on rather than saying
+  // "Captions". Which subtitle is playing is the one thing the bar cannot show
+  // any other way — the icon says only that something is on — and on this site
+  // it is a question with a real answer, because two tracks ship and they are
+  // not interchangeable. Off, or a stream with no tracks, keeps the plain word.
+  //
+  // Read off `tracks[activeTrack]` rather than off a second piece of state, so
+  // it cannot disagree with the list the captions menu is showing.
+  const captionsLabel = (activeTrack === null ? null : tracks[activeTrack]?.label) ?? 'Captions';
+
   /** Raises the rate for a hold, remembering what to come back to. */
   function holdStart() {
     if (!video || holdingRef.current) return;
@@ -895,7 +905,7 @@ export default function VideoPlayer({
         onVolume={changeVolume}
         onToggleMute={toggleMute}
         captionsOn={activeTrack !== null}
-        captionsLabel="Captions"
+        captionsLabel={captionsLabel}
         openMenu={menu}
         onOpenMenu={setMenu}
         qualityLabel={qualityLabel}

@@ -1,7 +1,7 @@
 import { after, NextResponse } from 'next/server';
 import site from '@config/site';
 import { cacheKey, isCached, publicUrl } from '@/lib/subtitles/cache';
-import { getJob, prepareSubtitle } from '@/lib/subtitles/jobs';
+import { getJob, prepareSubtitle, sourceLink } from '@/lib/subtitles/jobs';
 
 /**
  * ============================================================================
@@ -44,6 +44,11 @@ export const maxDuration = 60;
 /** Nothing here is cacheable — the status is the whole point. */
 const NO_STORE = { 'Cache-Control': 'no-store' };
 
+/** The absolute base a viewer's browser can reach this app on. */
+function viewerBase(request) {
+  return process.env.NEXT_PUBLIC_SITE_URL?.trim() || request.nextUrl.origin;
+}
+
 /**
  * The URL the player should fetch the subtitle from.
  *
@@ -58,14 +63,45 @@ async function subtitleUrl(request, fileName) {
   const direct = await publicUrl(fileName);
   if (direct) return direct;
 
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  const base = configured || request.nextUrl.origin;
-
   try {
-    return new URL(`/api/subtitles/${fileName}`, base).toString();
+    return new URL(`/api/subtitles/${fileName}`, viewerBase(request)).toString();
   } catch {
     return new URL(`/api/subtitles/${fileName}`, request.nextUrl.origin).toString();
   }
+}
+
+/**
+ * The client-facing view of a job.
+ *
+ * `sourceUrl` is the original-language subtitle, as the source's own link — the
+ * same file the translation was made from, and what the player offers as the
+ * English track. It is asked for on every response rather than read off the
+ * job, because most responses have no job behind them at all: a title that was
+ * translated once and has been served out of the store ever since still has an
+ * English subtitle, and the viewer should still get it. `sourceLink` looks it up
+ * on that path, and answers from its own memory on every path after the first.
+ *
+ * It is offered even when the job has failed or timed out. The link was found
+ * before the translation started, so an English track is available regardless of
+ * how the Sorani one turned out.
+ */
+async function toResponse(request, job, target) {
+  return NextResponse.json(
+    {
+      status: job.status,
+      phase: job.phase,
+      progress: job.progress,
+      code: job.code,
+      message: job.message,
+      resetAt: job.resetAt,
+      key: job.key,
+      /** What the waiting screen calls the subtitle it is preparing. */
+      label: site.subtitles.target.label,
+      url: job.fileName ? await subtitleUrl(request, job.fileName) : null,
+      sourceUrl: await sourceLink(job, target),
+    },
+    { headers: NO_STORE },
+  );
 }
 
 /** Reads the title out of a request, or explains why it cannot. */
@@ -91,25 +127,6 @@ function readTarget(source) {
   return { target: { mediaType, tmdbId } };
 }
 
-/** The client-facing view of a job. */
-async function toResponse(request, job) {
-  return NextResponse.json(
-    {
-      status: job.status,
-      phase: job.phase,
-      progress: job.progress,
-      code: job.code,
-      message: job.message,
-      resetAt: job.resetAt,
-      key: job.key,
-      /** What the waiting screen calls the subtitle it is preparing. */
-      label: site.subtitles.target.label,
-      url: job.fileName ? await subtitleUrl(request, job.fileName) : null,
-    },
-    { headers: NO_STORE },
-  );
-}
-
 export async function POST(request) {
   let body;
   try {
@@ -128,7 +145,7 @@ export async function POST(request) {
   const { job, work } = await prepareSubtitle(target);
   if (work) after(work.catch(() => {}));
 
-  return toResponse(request, job);
+  return toResponse(request, job, target);
 }
 
 export async function GET(request) {
@@ -136,7 +153,7 @@ export async function GET(request) {
   if (error) return NextResponse.json({ error }, { status: 400, headers: NO_STORE });
 
   const job = getJob(cacheKey(target));
-  if (job) return toResponse(request, job);
+  if (job) return toResponse(request, job, target);
 
   // No job *on this instance*. The jobs map lives in memory, so on a host that
   // runs several of them — which is every serverless host — the poll that
@@ -149,16 +166,20 @@ export async function GET(request) {
   // instances, and it is why the store has to be shared storage.
   const fileName = `${cacheKey(target)}.vtt`;
   if (await isCached(fileName)) {
-    return toResponse(request, {
-      status: 'ready',
-      phase: 'ready',
-      progress: 1,
-      code: null,
-      message: null,
-      resetAt: null,
-      key: cacheKey(target),
-      fileName,
-    });
+    return toResponse(
+      request,
+      {
+        status: 'ready',
+        phase: 'ready',
+        progress: 1,
+        code: null,
+        message: null,
+        resetAt: null,
+        key: cacheKey(target),
+        fileName,
+      },
+      target,
+    );
   }
 
   // Nothing stored and no local job. Either another instance is still working,
@@ -180,6 +201,11 @@ export async function GET(request) {
       key: cacheKey(target),
       label: site.subtitles.target.label,
       url: null,
+      // Left null rather than looked up: the job that would know it is on
+      // another instance, and searching for it here would spend one of the key's
+      // requests answering a question that instance is already answering. If the
+      // translation is real, the poll that reports `ready` carries the link.
+      sourceUrl: null,
     },
     { headers: NO_STORE },
   );

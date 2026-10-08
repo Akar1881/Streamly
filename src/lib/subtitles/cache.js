@@ -11,8 +11,8 @@
  *  Files are named for what they are and what is in them, which makes the store
  *  self-explanatory and means the same URL serves everyone:
  *
- *    movie-550-en-ckb.vtt        Fight Club, English → Sorani
- *    tv-1399-s1e1-en-ckb.vtt     a specific episode
+ *    movie-550-en-ckb-hls-v2.vtt        Fight Club, English → Sorani
+ *    tv-1399-s1e1-en-ckb-hls-v2.vtt     a specific episode
  *
  *  This module owns the keys and the name check; the storing itself is a
  *  backend. There are three, and which one is in use is a deployment question
@@ -55,7 +55,8 @@ function backend() {
 }
 
 /**
- * The cache key for a title: `movie-550-en-ckb`, `tv-1399-s1e1-en-ckb`.
+ * The cache key includes the subtitle-source pipeline version, so translations
+ * from the older Wyzie-first lookup are not reused.
  *
  * It encodes everything that would change the file's contents — the title, the
  * language pair — so a file is never served for a translation it does not
@@ -70,6 +71,7 @@ export function cacheKey({ mediaType, tmdbId, season, episode }) {
     isEpisode ? `s${season}e${episode}` : null,
     site.subtitles.sourceLanguage,
     site.subtitles.target.code,
+    'hls-v2',
   ]
     .filter(Boolean)
     .join('-');

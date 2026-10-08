@@ -353,13 +353,64 @@ const site = {
      * **Empty is a valid state.** With nothing listed the watch pages say no
      * source is configured rather than showing a player that cannot play.
      */
-    providers: ['rivestream'],
+    providers: ['videasy'],
     /** Start playing as soon as the page opens. */
     autoplay: true,
     /** Offer a "Next episode" button on TV playback pages. */
     episodeNav: true,
     /** Remember where the viewer left off (stored in their browser only). */
     saveProgress: true,
+
+    /**
+     * What the viewer is told when there is nothing to play, and where to go
+     * while there is nothing to play.
+     *
+     * Two sentences rather than one, because these are two different situations
+     * and a viewer reads them differently. `failed` is the provider answering
+     * wrong — often transient, which is why that one offers the retry. `missing`
+     * is the provider answering honestly that it does not carry this title.
+     * `dropped` is the third: the provider answered, but the stream itself died
+     * partway through and the player could not recover it.
+     *
+     * All three end on the channel link. "When will it be back" is the question
+     * this copy cannot answer, and on a site whose sources are what they are,
+     * that question comes up often enough to be worth answering in one place.
+     */
+    unavailable: {
+      failed: {
+        title: 'This source failed',
+        body:
+          'Sorry — the source did not respond. That is usually temporary, so try again, or ' +
+          'come back later.',
+      },
+      missing: {
+        title: 'Source not available',
+        body: 'Sorry — nothing is available for this title right now. Please come back later.',
+      },
+      dropped: {
+        title: 'This stream stopped playing',
+        body: 'Sorry — the stream dropped and could not be recovered. Try again, or come back later.',
+      },
+      /**
+       * The source said no before a single frame was shown.
+       *
+       * Worded differently from `dropped` on purpose: "it stopped" implies the
+       * film was running and suggests waiting will fix it, which is not what
+       * happened when the very first request was refused.
+       */
+      blocked: {
+        title: 'Cannot stream this right now',
+        body:
+          'Sorry — this source will not play this title at the moment. Try again, or come ' +
+          'back later.',
+      },
+      /** The link under all of them, and the label on the retry button. */
+      channel: {
+        label: 'Join our Telegram channel for news',
+        href: 'https://t.me/streamly_akar1881',
+      },
+      retry: 'Try again',
+    },
 
     /**
      * How a subtitle looks, and what the viewer is allowed to change about it.
@@ -466,6 +517,12 @@ const site = {
     enabled: true,
     /** ISO 639-1 code the source subtitle is fetched in. */
     sourceLanguage: 'en',
+
+    /**
+     * What that language is called in the player's subtitle menu, where it sits
+     * beside the translation as a second choice. `null` falls back to the code.
+     */
+    sourceLanguageLabel: 'English',
 
     /**
      * What it is translated into. `code` is the ISO 639-1 the player is told

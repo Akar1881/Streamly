@@ -23,7 +23,8 @@ import { cacheKey, isCached, isShared, writeCached } from './cache';
 import { SubtitleError } from './error';
 import { parseSubtitle, toVtt } from './srt';
 import { translateCues, translateKey } from './translate';
-import { fetchSourceSubtitle, wyzieKey } from './wyzie';
+import { fetchSourceSubtitle, findSource } from './wyzie';
+import { fetchVideasySubtitle } from '@/lib/providers/videasy-captions';
 
 /**
  * The mistake worth shouting about.
@@ -47,6 +48,21 @@ if (process.env.NODE_ENV === 'production' && site.subtitles.enabled && !isShared
 /** job key → job record. Finished jobs are kept briefly so late polls resolve. */
 const jobs = new Map();
 
+/**
+ * job key → the original-language subtitle's link, as a promise.
+ *
+ * Kept apart from the jobs map because it answers a different question, asked
+ * by a different caller. A job says "how far along is the translation"; this
+ * says "where is the file it was made from" — and it has to be answerable for a
+ * title that was translated days ago and served straight out of the store,
+ * where there is no job and never will be one.
+ *
+ * The *promise* is stored rather than its result, so two callers asking at the
+ * same moment share one search instead of spending two of the key's requests on
+ * the same answer.
+ */
+const links = new Map();
+
 /** How many finished jobs to remember before the oldest are dropped. */
 const MAX_JOBS = 200;
 
@@ -55,7 +71,7 @@ const RETRY_AFTER_MS = 60_000;
 
 /** True when the feature has everything it needs to run. */
 export function subtitlesEnabled() {
-  return Boolean(site.subtitles.enabled && wyzieKey() && translateKey());
+  return Boolean(site.subtitles.enabled && translateKey());
 }
 
 function createJob(key) {
@@ -103,12 +119,45 @@ function run(job, request) {
   // The job may outlive the request that started it (that is the point of the
   // timeout below), so it updates the record rather than returning a value.
   const work = (async () => {
-    const source = await fetchSourceSubtitle(request);
+    // Wyzie first, because it is the only source that hands back a link the
+    // player can use: the same file it gives us to translate becomes the
+    // original-language track. Videasy's HLS caption is a better timing match
+    // when it exists, but it only ever exists as bytes on this side, so it is
+    // the fallback.
+    //
+    // The call is guarded rather than left to `??` because Wyzie *throws* on a
+    // quota cap or a missing key — a `??` would never be reached, and a Wyzie
+    // limit would take down a translation the HLS caption could still supply.
+    // Its error is kept, though: its codes are the ones the waiting screen
+    // knows how to explain.
+    let source = null;
+    let sourceError = null;
+
+    try {
+      source = await fetchSourceSubtitle(request);
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      sourceError = error;
+    }
+
+    source ??= await fetchVideasySubtitle(request);
+
+    if (!source) {
+      throw sourceError ?? new SubtitleError('No subtitles found for this title', 'not-found');
+    }
 
     const cues = parseSubtitle(source.vtt);
     if (!cues.length) {
       throw new SubtitleError('The source subtitle had no readable cues', 'fetch-failed');
     }
+
+    // The original-language link is recorded here, before translating, rather
+    // than read off `source` by the caller afterwards: the waiting screen wants
+    // the English track *while* the Sorani one is being made, and a translation
+    // that later fails or runs out of time should still leave the viewer an
+    // English track to fall back on. Null when the source was the HLS caption,
+    // which has no link to hand out.
+    links.set(job.key, Promise.resolve(source.url ?? null));
 
     job.phase = 'translating';
     job.progress = 0.1;
@@ -257,6 +306,52 @@ export async function prepareSubtitle(request) {
   jobs.set(key, job);
 
   return { job, work: run(job, request) };
+}
+
+/**
+ * The link to the original-language subtitle a title was translated from, or
+ * null when there is not one.
+ *
+ * This is what puts an English track in the player's menu next to the Sorani
+ * one. It cannot come from the job alone: a title translated days ago is served
+ * straight out of the store, and there is no job behind a file — so on that
+ * path the link has to be looked up on its own, which is the case this exists
+ * for. It is searched with `findSource` rather than `fetchSourceSubtitle`
+ * because only the URL is wanted; downloading the file would spend a second
+ * request from the same quota for bytes nobody reads.
+ *
+ * Costs one search per title per instance, not one per page view: the promise
+ * is kept in `links` and re-used, including when the answer is "there is none".
+ *
+ * @param {{key: string, status: string}} job  whatever the caller is answering about
+ * @param {object} request  the title, as `prepareSubtitle`
+ * @returns {Promise<string|null>} — never throws
+ */
+export async function sourceLink(job, request) {
+  const known = links.get(job.key);
+  if (known) return known;
+
+  // A translation that is still looking for its source is about to record the
+  // link itself. Searching here at the same moment would spend a second request
+  // on the same answer, and the next poll reads the first one.
+  if (job.status === 'working') return null;
+
+  const search = findSource(request)
+    .then((found) => found.url)
+    .catch((error) => {
+      // "No English subtitle exists for this title" is an answer, and a stable
+      // one — remembering it stops every later viewer paying for the same miss.
+      // A quota cap or a rejected key is a fact about this moment, not about the
+      // title, so it is not kept and the next request tries again.
+      if (!(error instanceof SubtitleError) || error.code !== 'not-found') {
+        links.delete(job.key);
+      }
+
+      return null;
+    });
+
+  links.set(job.key, search);
+  return search;
 }
 
 /** The current state of a job, or null when there is nothing for that key. */

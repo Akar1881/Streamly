@@ -41,6 +41,7 @@ const WORKING = { status: 'working', phase: 'searching', progress: 0 };
  *   phase: string,
  *   progress: number,
  *   url: string|null,
+ *   sourceUrl: string|null,
  *   code: string|null,
  *   label: string,
  *   resetAt: string|null,
@@ -68,9 +69,21 @@ export function useTranslatedSubtitle({ mediaType, tmdbId, season, episode }) {
     const query = { mediaType, tmdbId, ...(season && episode ? { season, episode } : {}) };
     const deadline = Date.now() + site.subtitles.waitMs;
 
-    /** Stops polling and reports where we got to. */
+    /**
+     * Stops polling and reports where we got to.
+     *
+     * `sourceUrl` survives the ending. The local-settle paths below are endings
+     * this hook decided on — a timeout, a dropped connection — and the original
+     * language track was already known before the translation stalled. Losing it
+     * here would take the English subtitle away at exactly the moment the Sorani
+     * one failed, which is when a viewer most wants the alternative.
+     */
     const settle = (next) => {
-      if (alive.current) setState(next);
+      if (!alive.current) return;
+      setState((previous) => ({
+        ...next,
+        sourceUrl: next.sourceUrl ?? previous?.sourceUrl ?? null,
+      }));
     };
 
     /**

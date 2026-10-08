@@ -37,6 +37,15 @@ function isHls(src, type) {
   return /\.m3u8(\?|#|$)/i.test(String(src ?? ''));
 }
 
+function supportsNativeHls(video) {
+  if (!video.canPlayType('application/vnd.apple.mpegurl')) return false;
+
+  const userAgent = globalThis.navigator?.userAgent ?? '';
+  const isIOS = /iPad|iPhone|iPod/i.test(userAgent);
+  const isSafari = /Safari/i.test(userAgent) && !/(Chrome|Chromium|CriOS|FxiOS|Edg|OPR)/i.test(userAgent);
+  return isIOS || isSafari;
+}
+
 /** A level, flattened to what the quality menu actually needs. */
 function readLevel(level, index) {
   const height = level?.height || 0;
@@ -154,7 +163,7 @@ export function attachSource(video, src, { type, headers, onEngine, onError } = 
   // Safari reports 'maybe' or 'probably'; everything else reports ''. The check
   // is deliberately before the hls.js branch, because on iOS hls.js is not an
   // option and on Safari the native path is the better one.
-  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+  if (supportsNativeHls(video)) {
     video.src = src;
     onEngine?.({ engine: 'native', levels: [], current: -1, auto: true });
     return { dispose, setLevel };
@@ -179,18 +188,37 @@ export function attachSource(video, src, { type, headers, onEngine, onError } = 
       }
 
       hls = new Hls({
-        // Start at the top of the ladder and let bandwidth take it down, which
-        // is the behaviour a viewer expects from every other player.
+        // The ladder is entered at the top. `-1` leaves the first pick to the
+        // estimator only until the manifest arrives, at which point the level is
+        // pinned by hand below — see the comment there for why it is not left to
+        // `startLevel`.
         startLevel: -1,
-        // Keep a small buffer: the default is tuned for a shared CDN budget
-        // rather than for starting quickly.
-        maxBufferLength: 30,
+        // Roomier than the default, because a pinned top rendition has no lower
+        // level to fall back to: without a cushion of downloaded buffer in front
+        // of the playhead, the first bandwidth dip becomes a stall instead of a
+        // quiet downgrade. 40s at ~15 Mbps is roughly 75 MB, hence the size.
+        maxBufferLength: 40,
+        maxBufferSize: 80 * 1000 * 1000,
         enableWorker: true,
         ...headerConfig(headers),
       });
 
       hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
         levels = (data.levels ?? []).map(readLevel);
+
+        // Pin the highest rendition, and keep it pinned.
+        //
+        // `currentLevel` rather than `nextLevel`: this runs before the first
+        // fragment has been chosen, so there is no buffer to throw away, and
+        // `currentLevel` is also what takes the level out of ABR's hands — with
+        // it set, hls.js stops re-deciding on every bandwidth sample, which is
+        // the whole of "always the best quality" as opposed to "the best quality
+        // when the connection happens to be good". `data.levels` is sorted by
+        // bitrate ascending, so the last one is the top.
+        //
+        // The menu still switches: `setLevel` writes `currentLevel` too.
+        if (levels.length > 1) hls.currentLevel = levels.length - 1;
+
         current = hls.currentLevel;
         report('hls');
       });
@@ -202,6 +230,23 @@ export function attachSource(video, src, { type, headers, onEngine, onError } = 
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (disposed || !data.fatal) return;
+
+        /**
+         * A refusal, not a hiccup.
+         *
+         * hls.js reports a `400` from the manifest or a segment as an ordinary
+         * fatal network error, and the recovery below re-requests the same URL
+         * with the same query — which is exactly what the server just said no
+         * to. So a rejected stream was retried three times, taking several
+         * seconds to fail, with the viewer watching a poster the whole while.
+         * Anything in the 4xx range is an answer, and it will not change.
+         */
+        const status = data.response?.code ?? 0;
+        if (status >= 400 && status < 500) {
+          onError?.(new Error(`${data.details || 'Playback failed'} (HTTP ${status})`));
+          dispose();
+          return;
+        }
 
         // A fatal error is one this instance will not get past on its own, but
         // the two common ones have a documented cure. Being dropped mid-stream

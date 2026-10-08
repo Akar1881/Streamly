@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import site from '@config/site';
 import Icon from '@/components/ui/Icon';
 import PlayerCenterControls from '@/components/player/PlayerCenterControls';
 import PlayerControls, { volumeIcon } from '@/components/player/PlayerControls';
@@ -113,8 +114,18 @@ export default function VideoPlayer({
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1);
-  const [hold, setHold] = useState(false);
+  /**
+   * Whether holding the picture speeds the film up.
+   *
+   * On to begin with. It is the gesture people reach for without knowing it
+   * exists — press the picture and it runs faster — and it is harmless when it
+   * fires by accident, because a hold is only a hold after a quarter of a
+   * second and it ends when the press does. The Speed menu turns it off for
+   * anyone who would rather it did not.
+   */
+  const [hold, setHold] = useState(true);
   const [holding, setHolding] = useState(false); // drives the 2× badge
+  const [started, setStarted] = useState(false); // the film has painted a frame
   const [brightness, setBrightness] = useState(1); // the drag-on-the-left gesture
   const [buffering, setBuffering] = useState(false);
   const [error, setError] = useState(null);
@@ -169,6 +180,10 @@ export default function VideoPlayer({
 
     sourceRef.current = handle;
     setError(null);
+    // A different stream has not painted anything yet, so its poster goes back
+    // up — otherwise switching source leaves the old film's last frame on
+    // screen until the new one starts.
+    setStarted(false);
 
     return () => {
       handle.dispose();
@@ -210,6 +225,14 @@ export default function VideoPlayer({
     const onWaiting = () => setBuffering(true);
     const onLive = () => setBuffering(false);
 
+    // Deliberately its own handler rather than part of `onLive`: `canplay` says
+    // the first frame is ready, `playing` says the film is actually running —
+    // and the poster should come down on the second of those, not the first.
+    const onStarted = () => {
+      setBuffering(false);
+      setStarted(true);
+    };
+
     video.addEventListener('play', sync);
     video.addEventListener('pause', sync);
     video.addEventListener('ended', sync);
@@ -221,7 +244,7 @@ export default function VideoPlayer({
     video.addEventListener('seeked', onSeeked);
     video.addEventListener('progress', syncBuffered);
     video.addEventListener('waiting', onWaiting);
-    video.addEventListener('playing', onLive);
+    video.addEventListener('playing', onStarted);
     video.addEventListener('canplay', onLive);
 
     sync();
@@ -238,7 +261,7 @@ export default function VideoPlayer({
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('progress', syncBuffered);
       video.removeEventListener('waiting', onWaiting);
-      video.removeEventListener('playing', onLive);
+      video.removeEventListener('playing', onStarted);
       video.removeEventListener('canplay', onLive);
     };
   }, [video]);
@@ -696,18 +719,33 @@ export default function VideoPlayer({
       tabIndex={0}
       onKeyDown={onKeyDown}
       onPointerMove={wake}
+      // The browser's own menu over a player offers "Save video as…", "Cast…"
+      // and "Picture in picture" against an `<video>` that is one segment of a
+      // stream, so every entry in it either does nothing or downloads a
+      // fragment. Suppressed over the whole player rather than the `<video>`
+      // alone, because most of what is on show here is not the element: the
+      // gesture surface sits over it, and a right-click there was reaching the
+      // page behind.
+      onContextMenu={(event) => event.preventDefault()}
       aria-label={title ? `${title} player` : 'Video player'}
-      className="relative aspect-video w-full overflow-hidden rounded-[var(--radius-card)]
-        border border-line bg-black outline-none"
+      // Fullscreen drops the border and the rounded corners. The element is the
+      // whole screen there, so the corner it is cut off at leaves a bright arc
+      // of `border-line` against the black — four of them, which reads as a bug
+      // rather than as a design.
+      // `select-none` as well as the context menu: a press held on a touch
+      // screen starts a text selection and, on iOS, the callout that goes with
+      // it — both of which arrive before the hold gesture has had its quarter of
+      // a second, and both of which look like the player reacting to a press by
+      // doing nothing.
+      className={`relative aspect-video w-full select-none overflow-hidden bg-black outline-none
+        ${fullscreen ? '' : 'rounded-[var(--radius-card)] border border-line'}`}
     >
       <video
         ref={setVideo}
-        poster={poster}
         playsInline
         preload="metadata"
         title={title}
         onEnded={onEnded}
-        onContextMenu={(event) => event.preventDefault()}
         // Dimming the picture itself, not the frame around it: the subtitles are
         // drawn over this element rather than in it, so they stay at full
         // contrast — which is the point of dimming a bright scene in the dark.
@@ -716,6 +754,23 @@ export default function VideoPlayer({
       >
         {/* A subtitle track is deliberately absent — see SubtitleOverlay. */}
       </video>
+
+      {/* The poster, drawn here rather than handed to the element as `poster`.
+          An element draws its poster with the video's own `object-fit`, and that
+          is `contain` — right for the picture, since cropping a 4:3 stream to
+          fill a 16:9 frame would cut the top and bottom off the shot, but wrong
+          for a poster, which on this site is portrait box art and ends up a
+          narrow strip between two wide black bars. As its own image it can be
+          fitted with `cover`, which fills the frame whatever shape it is.
+          Taken down once the film has painted a frame — see `onStarted`. */}
+      {poster && !started && (
+        <img
+          src={poster}
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 size-full object-cover"
+        />
+      )}
 
       {cues.length > 0 && (
         <SubtitleOverlay video={video} cues={cues} delay={delay} settings={settings} />
@@ -787,8 +842,36 @@ export default function VideoPlayer({
         <div className="absolute inset-0 z-40 grid place-items-center bg-black/85 px-6 text-center">
           <div className="max-w-sm">
             <Icon name="alert-circle" size={26} className="mx-auto text-white/70" />
-            <p className="mt-2 text-sm font-medium text-white">This stream will not play</p>
-            <p className="mt-1 text-xs leading-relaxed text-white/60">{error}</p>
+            <p className="mt-2 text-sm font-medium text-white">
+              {/* Whether the film ever played decides which of the two this is,
+                  and they are not interchangeable: "it stopped" tells a viewer
+                  to wait for it to come back, which is the wrong advice when the
+                  source refused the very first request. */}
+              {started
+                ? site.player.unavailable.dropped.title
+                : site.player.unavailable.blocked.title}
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-white/60">
+              {started
+                ? site.player.unavailable.dropped.body
+                : site.player.unavailable.blocked.body}
+            </p>
+
+            <a
+              href={site.player.unavailable.channel.href}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-[var(--radius-pill)]
+                border border-white/25 px-3 py-1.5 text-xs text-white/80 transition-colors
+                hover:text-white"
+            >
+              <Icon name="send" size={13} />
+              {site.player.unavailable.channel.label}
+            </a>
+
+            {/* The engine's own words, kept for whoever has to work out why.
+                Small and dim: it is a fault message, not something to read. */}
+            <p className="mt-3 text-[10px] leading-relaxed text-white/30">{error}</p>
           </div>
         </div>
       )}

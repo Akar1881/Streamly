@@ -75,7 +75,7 @@
  */
 
 import site from '@config/site';
-import rivestream from './rivestream'
+import videasy from './videasy-provider';
 
 /**
  * Every implemented provider, keyed by its `id`.
@@ -84,7 +84,7 @@ import rivestream from './rivestream'
  * listed in `config/site.js` with no module here is skipped rather than
  * crashing the watch page, so a typo costs a switcher entry, not the site.
  */
-const PROVIDERS = { rivestream };
+const PROVIDERS = { videasy };
 
 /** Every configured provider that actually exists, in config order. */
 export function listProviders() {

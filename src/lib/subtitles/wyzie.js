@@ -98,17 +98,25 @@ function pickResult(results) {
 }
 
 /**
- * Searches for the source-language subtitle of a movie or episode.
+ * The best source-language subtitle for a movie or episode, as a link — without
+ * downloading it.
+ *
+ * Split from `fetchSourceSubtitle` because the two have different costs and
+ * different callers. Translating needs the bytes and pays a download for them.
+ * The player only needs the *link*, and this is what a translation served out
+ * of the store has to fall back on: a cached file has no job behind it, so the
+ * link has to be found on its own or the English track would only ever appear
+ * for the first viewer of a title.
  *
  * @param {object} request
  * @param {'movie'|'tv'} request.mediaType
  * @param {number} request.tmdbId
  * @param {number} [request.season]
  * @param {number} [request.episode]
- * @returns {Promise<{ vtt: string, language: string, source: string|null }>}
+ * @returns {Promise<{ url: string, language: string, source: string|null }>}
  * @throws {SubtitleError}
  */
-export async function fetchSourceSubtitle({ mediaType, tmdbId, season, episode }) {
+export async function findSource({ mediaType, tmdbId, season, episode }) {
   const key = wyzieKey();
   if (!key) {
     throw new SubtitleError('No Wyzie API key configured', 'unavailable');
@@ -147,13 +155,41 @@ export async function fetchSourceSubtitle({ mediaType, tmdbId, season, episode }
     );
   }
 
+  // `to: 'vtt'` asks their server to convert when the link is followed; `plain`
+  // strips the styling codes, empty lines and duplicates — noise in a player
+  // just as much as in a translator's input.
+  //
+  // Handed to the browser as-is, which is what the library is for: its own
+  // documented example is `track.src = withDownloadOptions(result, …)`. Two
+  // things follow. Wyzie counts **every fetch of the link** against the key's
+  // request quota, so it is worth looking up lazily rather than on every page
+  // view. And it is the raw file, so it still opens with the free tier's
+  // promotional card — `stripWatermark` removes that only from the copy we
+  // translate.
+  return {
+    url: withDownloadOptions(chosen, { to: 'vtt', plain: true }),
+    language: chosen.language,
+    source: chosen.source ?? null,
+  };
+}
+
+/**
+ * The source-language subtitle itself, ready to be torn into cues.
+ *
+ * @param {object} request  as `findSource`
+ * @returns {Promise<{ vtt: string, url: string, language: string, source: string|null }>}
+ * @throws {SubtitleError}
+ */
+export async function fetchSourceSubtitle(request) {
+  const found = await findSource(request);
+
   try {
-    // `to: 'vtt'` asks their server to convert; `plain` strips the styling
-    // codes, empty lines and duplicates that would otherwise be translated.
-    const vtt = stripWatermark(
-      await parseToVTT(withDownloadOptions(chosen, { to: 'vtt', plain: true })),
-    );
-    return { vtt, language: chosen.language, source: chosen.source ?? null };
+    return {
+      vtt: stripWatermark(await parseToVTT(found.url)),
+      url: found.url,
+      language: found.language,
+      source: found.source,
+    };
   } catch (error) {
     throw toSubtitleError(error, 'download');
   }

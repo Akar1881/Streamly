@@ -83,9 +83,20 @@ export default function ContinueWatching() {
                 type="button"
                 onClick={() => setItems(removeProgress(item.mediaType, item.id))}
                 aria-label={`Remove ${item.title} from Continue watching`}
+                // Revealed on hover where there is a pointer to hover with, and
+                // simply always out where there is not. A touch screen never
+                // hovers, so hiding this until hover did not make it discreet on
+                // a phone — it made the history impossible to clear.
+                //
+                // `pointer-coarse` rather than a width breakpoint: a phone held
+                // sideways is wider than a small laptop window, and a tablet is
+                // wider than both, and both are still touch. The larger target
+                // goes with it — 28px is a fine mouse target and an awkward one
+                // for a thumb.
                 className="absolute right-2 top-2 grid size-7 place-items-center rounded-full
                   bg-black/70 text-white opacity-0 backdrop-blur-sm transition-opacity
-                  hover:bg-black group-hover:opacity-100"
+                  hover:bg-black group-hover:opacity-100
+                  pointer-coarse:size-9 pointer-coarse:opacity-100"
               >
                 <Icon name="x" size={14} />
               </button>

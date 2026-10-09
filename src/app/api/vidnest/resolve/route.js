@@ -36,18 +36,7 @@ export async function POST(request) {
     // `url` and `type` are the two the provider reads; `quality` is kept because
     // it is the only thing that describes the picture when a stream carries no
     // resolution of its own.
-    //
-    // `proxy` is the one trace of that dropped name worth keeping, and it is a
-    // boolean precisely because it says nothing: it marks a stream whose host
-    // will not answer a browser, so the provider has to wrap it. It is a flag
-    // rather than a finished URL because the wrapping belongs on the browser
-    // side, where the path can be relative — see `vidnest-provider.js`.
-    const playable = streams.map(({ url, type, quality, proxy }) => ({
-      url,
-      type,
-      quality,
-      proxy: proxy === true,
-    }));
+    const playable = streams.map(({ url, type, quality }) => ({ url, type, quality }));
 
     return Response.json(
       { streams: playable, subtitles },

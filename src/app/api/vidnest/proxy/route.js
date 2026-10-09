@@ -2,22 +2,31 @@
  * ============================================================================
  *  VIDNEST STREAM PROXY
  * ============================================================================
- *  Vidnest is a fan-out over ten upstream servers, and nine of them hand back a
- *  URL on a Cloudflare Worker that fronts the real host, injects the `Referer`
- *  that host demands and echoes our `Origin` back — so the page fetches those
- *  itself and no proxy is involved. This route exists for the tenth.
+ *  Vidnest is a fan-out over ten upstream servers, and not one of the hosts they
+ *  answer on lets a browser read what it serves. They refuse it in two different
+ *  ways, which come to the same thing here.
  *
- *  Klikxxi answers with a bare hostname on a domain that rotates every time it
- *  is asked — `homechefrecipes.sbs`, `halcyoncreative.site`, `chillx.sbs` — and
- *  that host returns 404 to anything arriving without a `Referer` of
- *  `https://vidnest.fun/`, and sends no CORS header at all. Neither is something
- *  a browser can supply: `Referer` is on the forbidden-header list, and a page
- *  that cannot see `Access-Control-Allow-Origin` cannot read the response even
- *  when the request goes through. So the viewer got a source in the menu, picked
- *  it, and watched nothing.
+ *  Most of them answer on a Cloudflare Worker that fronts the real host and
+ *  gates CORS by origin. The gate allows `vidnest.fun`, and — apparently by
+ *  oversight — `localhost`, and refuses everything else. So those streams work
+ *  on a development machine and fail in production, which is exactly how this
+ *  was found: Neon measured 2160p and played locally, showed no quality at all
+ *  on Vercel, and played nothing.
  *
- *  Which is what this is for: our server makes the request instead, with the
- *  header the host wants, and points every URL inside the playlists back at
+ *  Klikxxi answers differently, with a bare hostname on a domain that rotates
+ *  every time it is asked — `homechefrecipes.sbs`, `halcyoncreative.site`,
+ *  `chillx.sbs` — and that host returns 404 to anything arriving without a
+ *  `Referer` of `https://vidnest.fun/`, sending no CORS header at all.
+ *
+ *  Neither refusal is something a browser can work around. `Referer` and
+ *  `Origin` are on the forbidden-header list, so `fetch` drops them silently and
+ *  sends the page's own origin instead; and a page that cannot see
+ *  `Access-Control-Allow-Origin` cannot read the response even when the request
+ *  does arrive. The viewer got a source in the menu, picked it, and watched
+ *  nothing.
+ *
+ *  So this route makes the request instead, with the `Referer` and `Origin` that
+ *  satisfy both kinds of host, and points every URL inside the playlists back at
  *  itself so the segments come the same way.
  *
  *  ---------------------------------------------------------------------------
@@ -45,13 +54,16 @@ import {
 const ROUTE_PATH = '/api/vidnest/proxy';
 
 /**
- * What klikxxi's stream hosts want to see.
+ * What Vidnest's stream hosts want to see.
  *
- * The referer is the whole point — measured, not guessed: with it these hosts
- * answer 200, without it they answer 404, and no other header changes that. The
- * origin comes along because their player sends one and it costs nothing to look
- * like it; `Accept` is `*&#47;*` rather than the JSON type the lookup sends,
- * because these are playlists and segments, not API answers.
+ * These two headers are the whole reason this route exists, and between them
+ * they satisfy both kinds of host behind this provider: the `Origin` is what the
+ * Cloudflare Workers gate on, and the `Referer` is what klikxxi's bare hosts
+ * demand. Measured, not guessed — with them these hosts answer 200, and without
+ * them the Workers return no CORS header and the bare hosts return 404.
+ *
+ * `Accept` is `*&#47;*` rather than the JSON type the lookup sends, because these
+ * are playlists and segments, not API answers.
  */
 const UPSTREAM_HEADERS = {
   'User-Agent':
@@ -106,13 +118,13 @@ async function fetchUpstream(target, range, signal) {
 /**
  * A playlist, with every URL inside it pointed back here.
  *
- * These are masters as often as not — klikxxi's carry the audio groups, the
- * three video rungs and their iframe twins, all as `URI="…"` attributes and bare
- * lines that `rewritePlaylist` catches between them — and the segments beneath
- * them are named by absolute path, so resolving each child against the playlist
- * it came from lands them in the right place. Nothing provider-specific is
- * carried down: the headers this route needs are constants, so the child URLs
- * are as short as they can be.
+ * These are masters as often as not — they carry the audio groups, the video
+ * rungs and their iframe twins, as `URI="…"` attributes and as bare lines that
+ * `rewritePlaylist` catches between them — and the segment URLs beneath them are
+ * named by absolute path, so resolving each child against the playlist it came
+ * from lands them in the right place. Nothing provider-specific is carried down:
+ * the headers this route needs are constants, so the child URLs are as short as
+ * they can be.
  */
 async function playlistResponse(response, url, request) {
   const playlist = rewritePlaylist(await response.text(), url, (childUrl) =>

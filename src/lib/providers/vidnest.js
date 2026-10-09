@@ -17,11 +17,15 @@
  *  decoded before it is JSON at all — `decodeVidnestBase64` below. Nothing here
  *  is a secret; it is obfuscation, and it is undone the same way it is done.
  *
- *  What comes back is HLS, and the playlists that matter are masters: the one
- *  that works is a Cloudflare Worker that fronts an upstream host, injects the
- *  `Referer` that host demands, and echoes back our `Origin` — so the browser
- *  can fetch it directly and none of the ten servers' own headers travel with
- *  the stream. That is why a source here carries no `headers`.
+ *  What comes back is HLS, and the playlists are masters. What none of it is, is
+ *  directly playable: every host these servers answer on refuses a browser one
+ *  way or another, so every stream this returns is wrapped by the proxy in
+ *  `src/app/api/vidnest/proxy/route.js` before it reaches a player. That route's
+ *  header has the full account; the short version is that one group of hosts
+ *  gates CORS by origin and allows `vidnest.fun` — and, apparently by oversight,
+ *  `localhost` — while refusing the domain this site is really served from, and
+ *  another wants a `Referer` and sends no CORS at all. The first of those works
+ *  on a development machine and fails in production, which is how it was found.
  * ============================================================================
  */
 
@@ -93,21 +97,13 @@ const HEADERS = {
 };
 
 /**
- * The ten servers, and the one thing that tells them apart.
+ * The ten servers, asked in parallel.
  *
- * `proxy` marks a server whose streams a browser cannot fetch for itself. Most
- * of these hand back a URL on a Cloudflare Worker that fronts the upstream host,
- * injects the `Referer` that host demands and echoes our `Origin` back — so the
- * page plays those directly, which is why a source from here normally carries no
- * `headers`.
- *
- * Klikxxi does not. It answers with a bare rotating hostname that returns 404 to
- * anything arriving without a `Referer` and sends no CORS header at all, so
- * every one of its streams was dead on arrival in the player: it went into the
- * source menu, was chosen, and played nothing. That was measured rather than
- * assumed — eight klikxxi streams across eight titles, not one of them fetchable
- * from a browser, against two of two from flixhq — and it is the whole reason
- * `src/app/api/vidnest/proxy/route.js` exists.
+ * Which of them answers varies by title and by the minute — on a popular film
+ * one or two reply and the rest return nothing, on another none of them do — so
+ * this is a fan-out rather than a preference order. Nothing here ranks the
+ * results either: they come back in the order they answered, and which one plays
+ * is settled downstream by measuring them.
  */
 const SERVERS = [
     { path: 'moviebox', query: '' },
@@ -119,7 +115,7 @@ const SERVERS = [
     { path: 'flixhq', query: '' },
     { path: 'vidlink', query: '' },
     { path: 'onehd', query: '?server=upcloud' },
-    { path: 'klikxxi', query: '', proxy: true }
+    { path: 'klikxxi', query: '' }
 ];
 
 /**
@@ -174,7 +170,7 @@ export async function inspectVidnest({
             if (!json.encrypted || !json.data) return null;
 
             const decrypted = decrypt(json.data);
-            return { server: server.path, proxy: server.proxy === true, data: decrypted };
+            return { server: server.path, data: decrypted };
         } catch {
             // A timeout, an abort, a dead host and a payload that will not
             // decrypt all land here for the same reason: this server has no
@@ -192,17 +188,8 @@ export async function inspectVidnest({
 
     for (const result of results) {
         if (result.status === 'fulfilled' && result.value) {
-            const { server, proxy, data } = result.value;
+            const { server, data } = result.value;
             const parsed = parseServerResponse(server, data);
-
-            // Carried on the stream rather than decided again by whoever reads
-            // this: which server a stream came from is dropped before the answer
-            // leaves the route, so this flag is the only trace of it that
-            // survives to the point where the URL has to be wrapped.
-            if (proxy) {
-                for (const stream of parsed.streams) stream.proxy = true;
-            }
-
             sources.push(...parsed.streams);
             subtitles.push(...parsed.subtitles);
         }

@@ -30,19 +30,26 @@ function mimeType(stream) {
 }
 
 /**
- * A stream the browser cannot fetch for itself, pointed through our proxy.
+ * A stream, pointed through our proxy.
  *
- * One of the ten servers behind this provider answers on a bare rotating host
- * that returns 404 to anything without a `Referer` and sends no CORS header at
- * all, so the page can never read its streams however it asks for them. The
- * route does the asking instead, with the header, and rewrites the playlists so
- * the segments come the same way — see `src/app/api/vidnest/proxy/route.js`.
+ * Every one of them, and that is not caution. The hosts behind this provider do
+ * not let a browser read what they serve: one group gates CORS by origin and
+ * allows `vidnest.fun` — and, apparently by oversight, `localhost` — while
+ * refusing the domain this site is actually deployed on, and another group wants
+ * a `Referer` and sends no CORS header at all. The first of those is invisible on
+ * a development machine and fatal in production, which is precisely how it was
+ * found: Neon measured 2160p and played locally, showed no quality at all on
+ * Vercel, and played nothing.
+ *
+ * The route does the fetching instead, with the headers those hosts want, and
+ * rewrites the playlists so the segments come the same way. It is the same
+ * arrangement `videasy-provider.js` uses, and the same reason.
  *
  * Relative, and deliberately so. This runs in the browser, so it has to resolve
  * against whatever origin the page was served from; an absolute URL would have
  * to be built on the server, where the scheme is not necessarily the one the
  * viewer is using, and behind a proxy that terminates TLS it would be the wrong
- * one. `videasy-provider.js` makes the same choice for the same reason.
+ * one.
  */
 function proxied(url) {
   return `/api/vidnest/proxy?url=${encodeURIComponent(url)}`;
@@ -82,7 +89,7 @@ export default {
       sources: streams
         .filter((stream) => typeof stream.url === 'string' && stream.url.length > 0)
         .map((stream, index) => ({
-          src: stream.proxy ? proxied(stream.url) : stream.url,
+          src: proxied(stream.url),
           type: mimeType(stream),
           label: `${CODENAME} ${index + 1}`,
         })),

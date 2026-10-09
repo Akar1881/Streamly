@@ -74,6 +74,42 @@ function fullscreenElement() {
 }
 
 /**
+ * The screen, if this is a device with one worth turning.
+ *
+ * A phone held upright in a fullscreen player is a postage stamp between two
+ * bars, so going fullscreen asks the screen for landscape and coming out of it
+ * asks to stop being told. `lock` is specified to require fullscreen — asked
+ * anywhere else it rejects with a `SecurityError` — and that is the whole reason
+ * this is driven from the `fullscreenchange` event rather than from the click
+ * that starts it: the event is the first moment the request is allowed, and it
+ * is also the only place that sees every way in and out, including the ones the
+ * browser owns — Esc, the `f` shortcut, and exiting fullscreen by system
+ * gesture, none of which come through `toggleFullscreen`.
+ *
+ * `unlock` is the way back rather than a lock to `portrait`. It hands the screen
+ * to the device's own rotation again, which is portrait for a phone held upright
+ * — the state the viewer was in — without pinning a device that was lying
+ * sideways when they left, or a tablet, to a rotation they never chose.
+ *
+ * Every call is feature-detected and every failure is dropped. This is Android
+ * Chrome's API: iOS Safari has `screen.orientation` but no `lock`, Firefox has
+ * neither, and desktop Chrome has `lock` and refuses it. None of those is a case
+ * to handle — the viewer gets the ordinary fullscreen they would have got anyway
+ * — so the only wrong answer here is an exception where the browser has already
+ * said no.
+ */
+function lockLandscape() {
+  const orientation = typeof screen === 'undefined' ? null : screen.orientation;
+  if (!orientation?.lock) return;
+  orientation.lock('landscape').catch(() => {});
+}
+
+function unlockOrientation() {
+  const orientation = typeof screen === 'undefined' ? null : screen.orientation;
+  orientation?.unlock?.();
+}
+
+/**
  * @param {object} props
  * @param {{src: string, type?: string, label?: string, headers?: Record<string, string>}[]} props.sources  played in order; the first is used
  * @param {{src: string, label: string, hint?: string, default?: boolean}[]} [props.tracks]
@@ -423,14 +459,26 @@ export default function VideoPlayer({
 
   useEffect(() => {
     const onChange = () => {
-      setFullscreen(Boolean(fullscreenElement()));
+      const box = containerRef.current;
+      const active = fullscreenElement();
+
+      setFullscreen(Boolean(active));
+
+      // Our picture is the thing on screen, so it gets to say which way up the
+      // screen is; at any other moment — leaving fullscreen, or a fullscreen
+      // belonging to something that is not this player — the device is handed
+      // its rotation back. Both calls are no-ops where the browser has no
+      // orientation API to call, which is most of them.
+      if (active !== null && active === box) lockLandscape();
+      else unlockOrientation();
+
       // A fullscreen transition moves focus, and where it lands is the
       // browser's business — it has differed between browsers and between
       // versions of the same one. The shortcuts are bound to the container, so
       // rather than depend on the answer the player takes focus back itself.
       // Cheap, silent (the container is `outline-none`) and right either way,
       // since it is the only place a fullscreen visitor can type into.
-      containerRef.current?.focus({ preventScroll: true });
+      box?.focus({ preventScroll: true });
     };
 
     document.addEventListener('fullscreenchange', onChange);

@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import site from '@config/site';
 import { listProviders, resolvePlayback } from '@/lib/providers';
 import { useTranslatedSubtitle } from '@/lib/subtitles/client';
-import { recordProgress } from '@/lib/storage';
+import { getProgressEntry, recordProgress } from '@/lib/storage';
 import { backdropUrl, posterUrl } from '@/lib/images';
 import Icon from '@/components/ui/Icon';
 import VideoPlayer from '@/components/player/VideoPlayer';
@@ -15,8 +15,11 @@ import SubtitleProgress from '@/components/player/SubtitleProgress';
  *  PLAYER STAGE
  * ============================================================================
  *  Everything around the player on a watch page: which provider to ask, the
- *  translated subtitle, the source switcher, and the states in between.
- *  `VideoPlayer` itself is told nothing but URLs.
+ *  translated subtitle, the source menu, and the states in between.
+ *  `VideoPlayer` itself is told nothing but URLs — and, so that its own menu can
+ *  offer the choice, the list of sources it could be asked for instead. It still
+ *  knows what none of them are: it is handed a codename to print and an id to
+ *  hand back, and asking the new one is this file's job.
  *
  *  The order of business is deliberate:
  *
@@ -68,6 +71,18 @@ function noticeFor(code) {
         body: 'The subtitles for this title could not be prepared. Playing without them.',
       };
   }
+}
+
+/**
+ * The same list with `id` added, or the same list back if it is already there.
+ *
+ * Returning the original array rather than a fresh equal one matters: this is
+ * handed to `setState` on every resolve, and a new array each time would
+ * re-render the player — and so re-run every effect that depends on it — each
+ * time a provider was re-asked.
+ */
+function withUnavailable(list, id) {
+  return list.includes(id) ? list : [...list, id];
 }
 
 /** The box shown in place of the player when there is nothing to play. */
@@ -131,6 +146,31 @@ export default function PlayerStage({ media, season, episode }) {
    * code path that could drift from the first.
    */
   const [attempt, setAttempt] = useState(0);
+
+  /**
+   * Where to pick playback up, in seconds; 0 means "from the beginning".
+   *
+   * Read in an effect rather than during render because it comes from
+   * localStorage, which the server does not have — a value that only exists in
+   * the browser would make the first paint disagree with the markup.
+   *
+   * Held in state rather than looked up on demand so the player is given one
+   * `startAt` for the life of the page. It is deliberately never re-read as
+   * playback goes on: the position being written back is this title's own, so
+   * re-reading it would only fight the write.
+   */
+  const [startAt, setStartAt] = useState(0);
+
+  /**
+   * Which providers have come back with nothing for this title.
+   *
+   * Session state, on purpose. A provider that has nothing for a title will not
+   * have it a moment later, so re-asking on every render would be a request per
+   * render that cannot change its answer — but a provider that is merely down is
+   * worth trying again the next time the viewer opens a title, and starting from
+   * empty here is what makes that free.
+   */
+  const [unavailableIds, setUnavailableIds] = useState([]);
 
   const subtitle = useTranslatedSubtitle({
     mediaType: media.mediaType,
@@ -233,6 +273,12 @@ export default function PlayerStage({ media, season, episode }) {
       .then((result) => {
         if (cancelled) return;
         setPlayback(result);
+        // A provider answering with a stream clears its mark; `resolvePlayback`
+        // flattens a miss and a throw into the same `null`, so this is the one
+        // place that can tell "it works" from "not this one".
+        setUnavailableIds((current) =>
+          result ? current.filter((id) => id !== providerId) : withUnavailable(current, providerId),
+        );
         setResolving(false);
       })
       .catch((cause) => {
@@ -241,6 +287,7 @@ export default function PlayerStage({ media, season, episode }) {
         // the viewer than "this title is not here".
         setPlayback(null);
         setFailed(true);
+        setUnavailableIds((current) => withUnavailable(current, providerId));
         setResolving(false);
       });
 
@@ -249,6 +296,54 @@ export default function PlayerStage({ media, season, episode }) {
       controller.abort();
     };
   }, [providerId, media.mediaType, media.id, media.imdbId, season, episode, attempt]);
+
+  /**
+   * The viewer picking a source from the player's menu.
+   *
+   * Choosing the one already selected is not a no-op: on a source that has just
+   * failed it is the same request the Retry button makes, and the menu is where
+   * a viewer who has just been told the source is unavailable is most likely to
+   * ask again — so it re-asks. On a source that is playing it means nothing, and
+   * is ignored rather than tearing down a working stream to re-resolve it.
+   */
+  const chooseProvider = useCallback(
+    (id) => {
+      if (id === providerId) {
+        if (failed) setAttempt((count) => count + 1);
+        return;
+      }
+      setProviderId(id);
+    },
+    [providerId, failed],
+  );
+
+  /**
+   * Where the viewer left off, if that is still worth returning to.
+   *
+   * The stored history is keyed by title, not by episode, so for a show the
+   * position only applies when the episode being opened is the one it was
+   * recorded against — otherwise watching S2E1 would resume at whatever minute
+   * S1E5 was abandoned at.
+   */
+  useEffect(() => {
+    if (!site.player.saveProgress) return;
+
+    const entry = getProgressEntry(media.mediaType, media.id);
+    if (!entry) return;
+
+    if ((entry.season ?? null) !== (season ?? null)) return;
+    if ((entry.episode ?? null) !== (episode ?? null)) return;
+
+    const seconds = entry.seconds ?? 0;
+    const duration = entry.duration ?? 0;
+    const { minSeconds, nearEndSeconds } = site.player.resume;
+
+    // Too near either end to be a place anyone wants to be put back.
+    if (seconds < minSeconds) return;
+    if (duration > 0 && duration - seconds < nearEndSeconds) return;
+
+    setStartAt(seconds);
+  }, [media.mediaType, media.id, season, episode]);
 
   /** Remember this title so the home page can offer "Continue watching". */
   useEffect(() => {
@@ -263,6 +358,31 @@ export default function PlayerStage({ media, season, episode }) {
       episode: episode ?? null,
     });
   }, [media, season, episode]);
+
+  /**
+   * Moves the stored position as the title plays.
+   *
+   * `recordProgress` merges rather than replaces, so this carries the card's
+   * fields only because it has to pass the full entry — the position is the
+   * part that changes.
+   */
+  const handleProgress = useCallback(
+    (seconds, duration) => {
+      if (!site.player.saveProgress) return;
+      recordProgress({
+        id: media.id,
+        mediaType: media.mediaType,
+        title: media.title,
+        posterPath: media.posterPath,
+        backdropPath: media.backdropPath,
+        season: season ?? null,
+        episode: episode ?? null,
+        seconds,
+        duration,
+      });
+    },
+    [media, season, episode],
+  );
 
   // --- nothing to play -----------------------------------------------------
   if (providers.length === 0) {
@@ -337,6 +457,12 @@ export default function PlayerStage({ media, season, episode }) {
           poster={poster}
           title={playing}
           autoplay={site.player.autoplay}
+          startAt={startAt}
+          onProgress={handleProgress}
+          providers={providers}
+          providerId={providerId}
+          unavailable={unavailableIds}
+          onSelectProvider={chooseProvider}
         />
       ) : (
         <NoSource title={unavailable.title} body={unavailable.body}>
@@ -397,30 +523,6 @@ export default function PlayerStage({ media, season, episode }) {
           <Icon name="globe" size={13} />
           {site.subtitles.target.label} subtitles loaded
         </p>
-      )}
-
-      {/* ---------------- source switcher ---------------- */}
-      {providers.length > 1 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted">Source:</span>
-
-          {providers.map((provider) => (
-            <button
-              key={provider.id}
-              type="button"
-              onClick={() => setProviderId(provider.id)}
-              aria-pressed={provider.id === providerId}
-              className={`rounded-[var(--radius-pill)] border px-3 py-1 text-xs transition-colors
-                ${
-                  provider.id === providerId
-                    ? 'border-transparent bg-accent text-accent-text'
-                    : 'border-line bg-card text-muted hover:text-text'
-                }`}
-            >
-              {provider.label}
-            </button>
-          ))}
-        </div>
       )}
     </div>
   );

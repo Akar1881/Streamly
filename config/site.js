@@ -362,6 +362,25 @@ const site = {
     saveProgress: true,
 
     /**
+     * What counts as "where they left off", in seconds.
+     *
+     * `minSeconds` is the point below which a position is not worth returning
+     * to. Someone who stopped inside the opening titles has not really started
+     * the film, and dropping them back in a few seconds in is more annoying
+     * than playing it from the beginning.
+     *
+     * `nearEndSeconds` is the other end. That close to the credits the title is
+     * finished rather than paused, and resuming to watch the last two minutes
+     * and then roll credits is a worse ending than starting over. The check
+     * only applies once the player knows the duration; without one, only
+     * `minSeconds` decides.
+     */
+    resume: {
+      minSeconds: 15,
+      nearEndSeconds: 120,
+    },
+
+    /**
      * What the viewer is told when there is nothing to play, and where to go
      * while there is nothing to play.
      *

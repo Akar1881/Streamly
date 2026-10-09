@@ -136,13 +136,41 @@ export function getProgress() {
   return Array.isArray(entries) ? entries : [];
 }
 
+/** The history entry for one title, or `undefined` if it has never been opened. */
+export function getProgressEntry(mediaType, id) {
+  return getProgress().find(
+    (item) => entryKey(item.mediaType, item.id) === entryKey(mediaType, id),
+  );
+}
+
 /**
- * Records that the visitor opened a title. For shows this also remembers the
- * season and episode so the home page can link straight back to it.
+ * Records that the visitor opened a title, and where they are in it.
+ *
+ * It has two callers, and the difference between them is why this is not a
+ * plain overwrite. The watch page calls it once as it opens, to put the title
+ * in the history; the player calls it every few seconds with a position. The
+ * first of those has no position to give, so a call without `seconds` *keeps*
+ * what is already stored — otherwise merely opening a title would reset it to
+ * the start, and a resume could never survive being resumed.
+ *
+ * A position also only means anything inside a single episode, so a call whose
+ * season/episode differs from what is stored starts from zero. Without that,
+ * opening S2E1 would pick up at whatever minute S1E5 was abandoned at.
  */
 export function recordProgress(media) {
   const key = entryKey(media.mediaType, media.id);
-  const rest = getProgress().filter((item) => entryKey(item.mediaType, item.id) !== key);
+  const entries = getProgress();
+  const rest = entries.filter((item) => entryKey(item.mediaType, item.id) !== key);
+
+  const season = media.season ?? null;
+  const episode = media.episode ?? null;
+
+  const previous = entries.find((item) => entryKey(item.mediaType, item.id) === key);
+  const sameEpisode =
+    previous && (previous.season ?? null) === season && (previous.episode ?? null) === episode;
+
+  // Where the last of these came from, when there is one.
+  const carried = (field) => (sameEpisode ? (previous[field] ?? 0) : 0);
 
   const next = [
     {
@@ -151,8 +179,10 @@ export function recordProgress(media) {
       title: media.title,
       posterPath: media.posterPath ?? null,
       backdropPath: media.backdropPath ?? null,
-      season: media.season ?? null,
-      episode: media.episode ?? null,
+      season,
+      episode,
+      seconds: media.seconds ?? carried('seconds'),
+      duration: media.duration ?? carried('duration'),
       watchedAt: Date.now(),
     },
     ...rest,

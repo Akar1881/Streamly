@@ -1,25 +1,21 @@
-// test.js
-import { getStreams } from './torrent.js'; // Match your actual filename (e.g., torrent.js or torrastream.js)
+import { getStreams } from './hyper.js';
 
-async function runTest() {
-  console.log('Testing stream fetcher...');
-  
-  const tmdbId = '969681';
-  const mediaType = 'movie';
+async function testSeriesIds() {
+    const tests = [
+        { name: 'TMDB integer format', params: { tmdbId: '1399', mediaType: 'tv', season: 1, episode: 1 } },
+        { name: 'TVDB format', params: { imdbId: '121361', mediaType: 'tv', season: 1, episode: 1 } }, // Game of Thrones TVDB ID
+    ];
 
-  try {
-    const streams = await getStreams(tmdbId, mediaType);
-    
-    console.log(`\nFound ${streams.length} streams:\n`);
-    streams.forEach((stream, index) => {
-      console.log(`--- Stream ${index + 1} ---`);
-      console.log(`Title:    ${stream.title}`);
-      console.log(`Quality:  ${stream.quality}`);
-      console.log(`URL:      ${stream.url}`);
-    });
-  } catch (error) {
-    console.error('Error fetching streams:', error);
-  }
+    for (const test of tests) {
+        try {
+            console.log(`Testing ${test.name}...`);
+            const result = await getStreams(test.params);
+            console.log(`Success! Found ${result.streams.length} streams.`);
+            break;
+        } catch (err) {
+            console.log(`Failed: ${err.message}`);
+        }
+    }
 }
 
-runTest();
+testSeriesIds();

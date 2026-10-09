@@ -17,7 +17,7 @@
  *
  *         export default {
  *           id: 'example',              // matches the entry in config/site.js
- *           label: 'Example',           // what the switcher calls it
+ *           label: 'Neon',              // what the switcher calls it — a codename
  *
  *           async resolve({ mediaType, tmdbId, imdbId, season, episode, signal }) {
  *             const found = await lookItUp(...);        // sync is fine too
@@ -36,6 +36,23 @@
  *
  *  That is the whole integration. `PlayerStage` asks for a playback and hands
  *  the result straight to the player; there is no third step.
+ *
+ *  ---------------------------------------------------------------------------
+ *  `label` is a codename, never the service's real name
+ *  ---------------------------------------------------------------------------
+ *
+ *  Every name a viewer can read comes from `label`, and it is a word we chose
+ *  rather than the name of the service behind it — `Alpha`, `Neon`, `Gamma`.
+ *  That is a rule for this directory, not a per-provider decision: source
+ *  labels, the provider switcher and anything added later all inherit it from
+ *  here, so a new provider written to this contract is pseudonymous by default
+ *  and nobody has to remember to anonymise it afterwards.
+ *
+ *  The real name belongs in `id`, which is ours — it appears in
+ *  `config/site.js`, in logs, and in the provider module's filename, and none
+ *  of those are put in front of a viewer. Error strings a provider throws are
+ *  the same: `PlayerStage` catches them and shows the generic copy from
+ *  `player.unavailable`, so they are read by us and not by a viewer.
  *
  *  ---------------------------------------------------------------------------
  *  What `resolve` is given, and what it returns
@@ -86,12 +103,34 @@ import videasy from './videasy-provider';
  */
 const PROVIDERS = { videasy };
 
+/**
+ * What to call a provider that has no `label`.
+ *
+ * Deliberately *not* its `id`. The id is the service's real name — that is the
+ * point of the split — so falling back to it would put the one word this whole
+ * arrangement exists to hide in front of a viewer, and it would do it on the
+ * day a provider author forgot a field, which is the day nobody is looking.
+ *
+ * A provider missing its `label` is a mistake, so it should look like one: the
+ * warning names the module, and every unlabelled provider reading "Source" in
+ * the switcher is wrong in a way that gets noticed rather than plausible
+ * enough to ship.
+ */
+function fallbackLabel(id) {
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn(
+      `[providers] "${id}" has no label. Give it a codename — see the comment at the top of src/lib/providers/index.js.`,
+    );
+  }
+  return 'Source';
+}
+
 /** Every configured provider that actually exists, in config order. */
 export function listProviders() {
   return site.player.providers
     .map((id) => PROVIDERS[id])
     .filter(Boolean)
-    .map(({ id, label }) => ({ id, label: label ?? id }));
+    .map(({ id, label }) => ({ id, label: label ?? fallbackLabel(id) }));
 }
 
 /** The module behind an id, or undefined if nothing is registered for it. */
@@ -141,7 +180,7 @@ export async function resolvePlayback({
 
   return {
     providerId,
-    label: provider.label ?? providerId,
+    label: provider.label ?? fallbackLabel(providerId),
     sources: playback.sources,
     tracks: playback.tracks ?? [],
     poster: playback.poster ?? null,

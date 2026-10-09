@@ -38,6 +38,13 @@ export default function ContinueWatching() {
 
         const image = backdropUrl(item.backdropPath, 'w780') ?? posterUrl(item.posterPath);
 
+        // Entries written before the player reported anything have no position
+        // and no duration, and there is nothing meaningful to draw for them.
+        const percent =
+          item.duration > 0
+            ? Math.min(100, Math.round(((item.seconds ?? 0) / item.duration) * 100))
+            : 0;
+
         return (
           <div key={`${item.mediaType}-${item.id}`} className="snap-item w-[240px] shrink-0 sm:w-[280px]">
             <div className="group relative">
@@ -75,6 +82,14 @@ export default function ContinueWatching() {
                       </p>
                     )}
                   </div>
+
+                  {/* How far in they are. Sits on the bottom edge so it reads as
+                      a property of the card rather than of the artwork. */}
+                  {percent > 0 && (
+                    <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/25">
+                      <div className="h-full bg-accent" style={{ width: `${percent}%` }} />
+                    </div>
+                  )}
                 </div>
               </Link>
 

@@ -10,6 +10,7 @@ import QualityMenu from '@/components/player/QualityMenu';
 import SpeedMenu from '@/components/player/SpeedMenu';
 import SubtitleSettingsPanel from '@/components/player/SubtitleSettingsPanel';
 import SubtitleOverlay from '@/components/player/SubtitleOverlay';
+import ProviderMenu from '@/components/player/ProviderMenu';
 import { useTouchGestures } from '@/components/player/useTouchGestures';
 import { attachSource } from '@/lib/player/source';
 import { parseTrack } from '@/lib/player/cues';
@@ -80,8 +81,16 @@ function fullscreenElement() {
  * @param {string}  [props.title]        accessible name for the video
  * @param {boolean} [props.autoplay]
  * @param {number}  [props.startAt]      seconds to resume from
- * @param {(seconds: number) => void} [props.onProgress]
+ * @param {(seconds: number, duration: number) => void} [props.onProgress]
  * @param {() => void} [props.onEnded]
+ * @param {{id: string, label: string}[]} [props.providers]
+ *        the sources this page can play from, for the source menu. Distinct
+ *        from `sources` above, which is the *stream URLs* of whichever provider
+ *        is current — one is where the picture comes from, the other is what is
+ *        coming from it.
+ * @param {string}  [props.providerId]      the one playing
+ * @param {string[]} [props.unavailable]     provider ids that came back empty
+ * @param {(id: string) => void} [props.onSelectProvider]
  */
 export default function VideoPlayer({
   sources = [],
@@ -92,6 +101,10 @@ export default function VideoPlayer({
   startAt = 0,
   onProgress,
   onEnded,
+  providers = [],
+  providerId = null,
+  unavailable = [],
+  onSelectProvider,
 }) {
   const containerRef = useRef(null);
   const sourceRef = useRef(null); // the live engine handle
@@ -132,7 +145,7 @@ export default function VideoPlayer({
 
   // --- the chrome ---------------------------------------------------------
   const [visible, setVisible] = useState(true);
-  const [menu, setMenu] = useState(null); // 'captions' | 'quality' | 'speed' | 'settings'
+  const [menu, setMenu] = useState(null); // 'sources' | 'captions' | 'quality' | 'speed' | 'settings'
   const [hoveringBar, setHoveringBar] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [scrub, setScrub] = useState(null); // seconds while dragging the seek bar
@@ -296,13 +309,15 @@ export default function VideoPlayer({
   }, [video, muted]);
 
   // Report progress on a throttle. The page decides what to do with it; this
-  // only guarantees it is not called on every `timeupdate`.
+  // only guarantees it is not called on every `timeupdate`. The duration goes
+  // with it because the page cannot otherwise tell a position worth returning
+  // to from one that is two minutes short of the credits.
   useEffect(() => {
     if (!onProgress || !Number.isFinite(time)) return;
     if (Math.abs(time - reported.current) < PROGRESS_EVERY) return;
     reported.current = time;
-    onProgress(time);
-  }, [time, onProgress]);
+    onProgress(time, duration);
+  }, [time, duration, onProgress]);
 
   /* ---------------------------------------------------------------------- */
   /*  Subtitles                                                             */
@@ -785,7 +800,16 @@ export default function VideoPlayer({
       // it — both of which arrive before the hold gesture has had its quarter of
       // a second, and both of which look like the player reacting to a press by
       // doing nothing.
+      //
+      // The pointer goes with the chrome. A cursor floating over a picture with
+      // nothing to click is the same small lie as the bar still being there, and
+      // it is the more visible of the two on a dark frame. It comes back with
+      // the chrome, because anything that brings the bar back — a move, a key, a
+      // tap — wakes this first. `visible` is already the whole question: the
+      // player holds it true while paused, while a menu is open and while
+      // buffering, so a pointer that is about to be needed is never hidden.
       className={`relative aspect-video w-full select-none overflow-hidden bg-black outline-none
+        ${visible ? '' : 'cursor-none'}
         ${fullscreen ? '' : 'rounded-[var(--radius-card)] border border-line'}`}
     >
       <video
@@ -950,6 +974,8 @@ export default function VideoPlayer({
         onToggleMute={toggleMute}
         captionsOn={activeTrack !== null}
         captionsLabel={captionsLabel}
+        showSources={providers.length > 1}
+        sourceLabel={providers.find((provider) => provider.id === providerId)?.label ?? 'Source'}
         openMenu={menu}
         onOpenMenu={setMenu}
         qualityLabel={qualityLabel}
@@ -961,6 +987,19 @@ export default function VideoPlayer({
         visible={visible}
         onHover={setHoveringBar}
       />
+
+      {menu === 'sources' && (
+        <ProviderMenu
+          providers={providers}
+          providerId={providerId}
+          unavailable={unavailable}
+          onSelect={(id) => {
+            onSelectProvider?.(id);
+            setMenu(null);
+          }}
+          onClose={() => setMenu(null)}
+        />
+      )}
 
       {menu === 'captions' && (
         <CaptionsMenu

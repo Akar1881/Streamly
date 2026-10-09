@@ -50,6 +50,8 @@ export function volumeIcon(muted, volume) {
  * @param {() => void} props.onToggleMute
  * @param {boolean} props.captionsOn   whether a track is showing
  * @param {string}  props.captionsLabel
+ * @param {boolean} [props.showSources] whether more than one source is configured
+ * @param {string}  [props.sourceLabel] the codename of the one playing
  * @param {string|null} props.openMenu  which menu is open, if any
  * @param {(menu: string|null) => void} props.onOpenMenu
  * @param {string}  props.qualityLabel
@@ -75,6 +77,8 @@ export default function PlayerControls({
   onToggleMute,
   captionsOn,
   captionsLabel,
+  showSources,
+  sourceLabel,
   openMenu,
   onOpenMenu,
   qualityLabel,
@@ -196,6 +200,17 @@ export default function PlayerControls({
         </span>
 
         <div className="flex-1" />
+
+        {/* Leftmost of the three text buttons, because it is the coarsest of
+            them: the quality and the speed refine what is playing, this decides
+            where it is playing from — and changing it throws the other two away
+            and starts again. Not rendered at all when there is one source,
+            which is a choice with one option. */}
+        {showSources &&
+          menuButton('sources', sourceLabel, {
+            icon: 'cloud',
+            ariaLabel: `Source: ${sourceLabel}`,
+          })}
 
         {menuButton('captions', captionsLabel, {
           icon: captionsOn ? 'captions' : 'captions-off',

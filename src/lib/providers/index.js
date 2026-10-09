@@ -94,7 +94,6 @@
 import site from '@config/site';
 import videasy from './videasy-provider';
 import vidnest from './vidnest-provider';
-import vidrock from './vidrock-provider';
 import { measureStream } from './quality';
 
 /**
@@ -104,7 +103,7 @@ import { measureStream } from './quality';
  * listed in `config/site.js` with no module here is skipped rather than
  * crashing the watch page, so a typo costs a switcher entry, not the site.
  */
-const PROVIDERS = { videasy, vidnest, vidrock };
+const PROVIDERS = { videasy, vidnest };
 
 /**
  * What to call a provider that has no `label`.
@@ -195,11 +194,12 @@ export async function resolvePlayback({
  *
  * The list order in `config/site.js` decides ties, not the outcome, so a provider
  * that never answers would hold up the choice for as long as it felt like — and
- * they do not all defend themselves. One here has a deadline of its own on every
- * request it makes; the other passes the signal straight through to a chain of
- * fetches and will sit there until something else cancels it. So the deadline is
- * ours, and it is the only thing standing between a hung source and a watch page
- * that never starts.
+ * they do not all defend themselves. Vidnest gives each of the ten servers it
+ * asks eight seconds, which is longer than a source is worth waiting for before
+ * anyone knows whether it has this title; Videasy has no deadline at all and
+ * passes the signal straight through to a chain of fetches that will sit there
+ * until something else cancels it. So the deadline is ours, and it is the only
+ * thing standing between a hung source and a watch page that never starts.
  *
  * Five seconds is chosen against the slow one, which fans out to ten hosts and
  * can legitimately spend a few seconds doing it. Anything that has not answered

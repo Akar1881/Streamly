@@ -29,13 +29,13 @@ export async function POST(request) {
     });
 
     // The upstream server each stream came from is dropped here rather than in
-    // the client, for the same reason it is dropped for VidRock: it is a real
-    // service name, and the codename rule in `src/lib/providers/index.js` says
-    // those do not reach a viewer. Nothing downstream wants it — the source menu
-    // numbers these by position — and a name that never leaves the server cannot
-    // arrive in a browser by mistake. `url` and `type` are the two the provider
-    // reads; `quality` is kept because it is the only thing that describes the
-    // picture when a stream carries no resolution of its own.
+    // the client: it is a real service name, and the codename rule in
+    // `src/lib/providers/index.js` says those do not reach a viewer. Nothing
+    // downstream wants it — the source menu numbers these by position — and a
+    // name that never leaves the server cannot arrive in a browser by mistake.
+    // `url` and `type` are the two the provider reads; `quality` is kept because
+    // it is the only thing that describes the picture when a stream carries no
+    // resolution of its own.
     const playable = streams.map(({ url, type, quality }) => ({ url, type, quality }));
 
     return Response.json(

@@ -184,9 +184,9 @@ export function proxyUrl(routePath, requestUrl, targetUrl, params = {}) {
  *
  * `toProxyUrl(childUrl, upstreamUrl)` turns a child into the URL it should be
  * reached at, and is the only thing a provider has to supply. It is a callback
- * rather than a set of options because the providers genuinely differ: Videasy
- * carries a host token down from a master playlist to the segments beneath it,
- * VidRock sends fixed headers and needs nothing on the URL at all.
+ * rather than a set of options because what a provider needs on the URL is its
+ * own business: Videasy carries a host token down from a master playlist to the
+ * segments beneath it.
  *
  * `data:` and `skd:` are left alone — they are already the content, not a
  * location.

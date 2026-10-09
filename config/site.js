@@ -361,7 +361,7 @@ const site = {
      * **Empty is a valid state.** With nothing listed the watch pages say no
      * source is configured rather than showing a player that cannot play.
      */
-    providers: ['videasy', 'vidnest', 'vidrock'],
+    providers: ['videasy', 'vidnest'],
     /** Start playing as soon as the page opens. */
     autoplay: true,
     /** Offer a "Next episode" button on TV playback pages. */

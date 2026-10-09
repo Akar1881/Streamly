@@ -403,10 +403,39 @@ export default function VideoPlayer({
   }, [playing, menu, hoveringBar, buffering, wake]);
 
   useEffect(() => {
-    const onChange = () => setFullscreen(Boolean(fullscreenElement()));
+    const onChange = () => {
+      setFullscreen(Boolean(fullscreenElement()));
+      // A fullscreen transition moves focus, and where it lands is the
+      // browser's business — it has differed between browsers and between
+      // versions of the same one. The shortcuts are bound to the container, so
+      // rather than depend on the answer the player takes focus back itself.
+      // Cheap, silent (the container is `outline-none`) and right either way,
+      // since it is the only place a fullscreen visitor can type into.
+      containerRef.current?.focus({ preventScroll: true });
+    };
+
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
+
+  // The shortcuts are bound to the container, so they reach it only while focus
+  // is inside it. Choosing an item from a menu is the other way focus leaves:
+  // the menu closes, the row that was clicked goes with it, and when the focused
+  // element is removed the browser drops focus on the body — after which every
+  // shortcut does nothing until the viewer clicks the picture, which works only
+  // because that focusable container is the nearest focusable ancestor of the
+  // click. So the player puts focus back itself.
+  //
+  // Only when it has actually escaped, so that a click on a control is not
+  // undone a frame later, and `preventScroll` because a control can be focused
+  // from a click on a page scrolled anywhere.
+  useEffect(() => {
+    const owner = containerRef.current;
+    if (!owner) return;
+
+    const active = document.activeElement;
+    if (active === null || active === document.body) owner.focus({ preventScroll: true });
+  }, [menu]);
 
   /* ---------------------------------------------------------------------- */
   /*  Actions                                                               */
@@ -472,6 +501,7 @@ export default function VideoPlayer({
   }, [visible, wake]);
 
   const gestures = useTouchGestures({
+    fullscreen,
     holdEnabled: hold,
     skipSeconds: SKIP_SECONDS,
     volume,
@@ -728,7 +758,15 @@ export default function VideoPlayer({
       ref={containerRef}
       tabIndex={0}
       onKeyDown={onKeyDown}
-      onPointerMove={wake}
+      // A mouse crossing the picture is on its way to the controls, so it brings
+      // them up. A finger is not: inline it is scrolling the page past the
+      // player, and one passing over on its way down the page has asked for
+      // nothing — a finger that wants the chrome taps, which works in either
+      // mode. Without this, letting the page scroll over the player (see the
+      // gesture surface below) would flash the bar on every scroll past it.
+      onPointerMove={(event) => {
+        if (event.pointerType !== 'touch') wake();
+      }}
       // The browser's own menu over a player offers "Save video as…", "Cast…"
       // and "Picture in picture" against an `<video>` that is one segment of a
       // stream, so every entry in it either does nothing or downloads a
@@ -787,11 +825,17 @@ export default function VideoPlayer({
       )}
 
       {/* The gesture surface: under the chrome, over the picture.
-          `touch-none` hands the browser's own vertical scrolling and pinch-zoom
-          back to this element, which is what makes a drag up the picture a
-          volume change rather than a scroll of whatever is behind the player. */}
+          `touch-action` follows the one question that decides whether a finger
+          on the picture belongs to the player or to the page. Fullscreen there
+          is no page left to scroll, so `touch-none` takes the vertical drag for
+          the volume and brightness — see `useTouchGestures`. Inline the page is
+          the thing under the finger, and claiming the drag there is what turned
+          an ordinary scroll into a volume change, so only vertical panning is
+          left: the gesture layer ignores a press that travels, and the browser
+          scrolls instead. `pan-y` rather than `auto` also keeps the browser's
+          double-tap zoom away from a picture that has its own double tap. */}
       <div
-        className="absolute inset-0 z-10 touch-none"
+        className={`absolute inset-0 z-10 ${fullscreen ? 'touch-none' : 'touch-pan-y'}`}
         onClick={onSurfaceClick}
         onDoubleClick={onSurfaceDoubleClick}
         {...pointerHandlers()}

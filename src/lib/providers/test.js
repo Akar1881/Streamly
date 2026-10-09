@@ -1,14 +1,25 @@
 // test.js
-import { inspectVideasy } from './videasy.js';
+import { getStreams } from './torrent.js'; // Match your actual filename (e.g., torrent.js or torrastream.js)
 
-async function main() {
-    try {
-        console.log("Starting Videasy stream extraction for TMDB 299534...\n");
-        const result = await inspectVideasy('299534');
-        console.log("\nSuccess! Resolved streams:", result.streamUrls);
-    } catch (err) {
-        console.error("\n❌ Extraction failed:", err.message);
-    }
+async function runTest() {
+  console.log('Testing stream fetcher...');
+  
+  const tmdbId = '969681';
+  const mediaType = 'movie';
+
+  try {
+    const streams = await getStreams(tmdbId, mediaType);
+    
+    console.log(`\nFound ${streams.length} streams:\n`);
+    streams.forEach((stream, index) => {
+      console.log(`--- Stream ${index + 1} ---`);
+      console.log(`Title:    ${stream.title}`);
+      console.log(`Quality:  ${stream.quality}`);
+      console.log(`URL:      ${stream.url}`);
+    });
+  } catch (error) {
+    console.error('Error fetching streams:', error);
+  }
 }
 
-main();
+runTest();

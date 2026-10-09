@@ -23,6 +23,13 @@ import { clamp } from '@/lib/player/time';
  *  `pointerType === 'touch'` is routed here — `VideoPlayer` owns that dispatch,
  *  because the mouse has its own gesture (hold for 2×) on the same events.
  *
+ *  The drags and the double tap are for a picture that fills the screen. Inline,
+ *  they are fighting the page they sit in: a phone scrolls under the finger, and
+ *  a finger scrolling over the player looks exactly like a finger dragging up it
+ *  to turn the volume down. So inline a finger gets one thing — the tap that
+ *  shows the chrome — and everything else waits until the picture is fullscreen
+ *  and there is no page left to scroll.
+ *
  *  Nothing here is mouse-only or touch-only by accident: the aim is that a
  *  visitor on a phone gets the shortcuts a visitor at a keyboard already has.
  * ============================================================================
@@ -54,6 +61,8 @@ const MIN_BRIGHTNESS = 0.15;
 
 /**
  * @param {object} options
+ * @param {boolean} options.fullscreen     whether the picture fills the screen.
+ *        Only the tap is offered when it does not — see the note above.
  * @param {boolean} options.holdEnabled   whether "Hold for 2×" is switched on
  * @param {number}  options.skipSeconds    how far a double tap jumps
  * @param {number}  options.volume         0…1, read when a drag starts
@@ -67,6 +76,7 @@ const MIN_BRIGHTNESS = 0.15;
  * @returns {{ hud: object|null, down: Function, move: Function, up: Function, cancel: Function }}
  */
 export function useTouchGestures({
+  fullscreen,
   holdEnabled,
   skipSeconds,
   volume,
@@ -96,6 +106,7 @@ export function useTouchGestures({
   const latest = useRef({});
   useEffect(() => {
     latest.current = {
+      fullscreen,
       holdEnabled,
       skipSeconds,
       volume,
@@ -151,6 +162,11 @@ export function useTouchGestures({
     };
     mode.current = null;
 
+    // Inline, a press is only ever a tap waiting to happen. The hold timer is
+    // not even armed: it fires on stillness, and a finger held still on a page
+    // that scrolls is a finger that is about to scroll.
+    if (!settings.fullscreen) return;
+
     if (settings.holdEnabled) {
       holdTimer.current = window.setTimeout(() => {
         // If the finger has already gone somewhere, it is a drag that happens
@@ -168,6 +184,15 @@ export function useTouchGestures({
 
       const dx = event.clientX - start.x;
       const dy = event.clientY - start.y;
+
+      // Inline, the finger belongs to the page. Committing the press to "not a
+      // gesture" the moment it travels is also what stops a scroll that lifts
+      // before the browser sends `pointercancel` from reading as a tap and
+      // flashing the chrome on the way past.
+      if (!latest.current.fullscreen) {
+        if (Math.abs(dx) > SLOP || Math.abs(dy) > SLOP) mode.current = 'none';
+        return;
+      }
 
       if (!mode.current) {
         // The first direction the finger commits to decides what this is. A
@@ -232,7 +257,13 @@ export function useTouchGestures({
 
       const settings = latest.current;
 
+      // The skip is fullscreen-only along with the drags. It is the one gesture
+      // here that does not itself fight the page — two taps do not move a
+      // finger — but half a set is harder to predict than none, and a viewer
+      // who has just found that drags do nothing inline will not be looking for
+      // a double tap to still work.
       if (
+        settings.fullscreen &&
         event.timeStamp - lastTap.current < DOUBLE_TAP_MS &&
         Math.abs(event.clientX - lastTapX.current) < DOUBLE_TAP_SLOP
       ) {
@@ -248,9 +279,25 @@ export function useTouchGestures({
         return;
       }
 
+      // Whether this is the second of a pair. Read before the stamp below is
+      // written, because that stamp is what it compares against.
+      const paired = event.timeStamp - lastTap.current < DOUBLE_TAP_MS;
+
       lastTap.current = event.timeStamp;
       lastTapX.current = event.clientX;
       window.clearTimeout(tapTimer.current);
+
+      // Inline there is no second tap to wait for — it was the double tap that
+      // made the wait necessary — so the chrome comes up on the tap. The pair is
+      // then dismissed here instead: two taps in quick succession would
+      // otherwise bring the chrome up and take it straight back down, which
+      // reads as a tap that did nothing at all.
+      if (!settings.fullscreen) {
+        lastTap.current = 0;
+        if (!paired) settings.onControls?.();
+        return;
+      }
+
       // Waiting out the double-tap window is the price of having a double tap at
       // all: acting now would mean acting before the second tap could arrive.
       // It is bearable because a tap does not start or stop the film — the

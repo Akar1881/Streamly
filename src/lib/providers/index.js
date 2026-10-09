@@ -2,7 +2,7 @@
  * ============================================================================
  *  PLAYBACK PROVIDERS
  * ============================================================================
- *
+ * g
  *  A provider answers one question: "the visitor asked for this title — what
  *  should the player play?" It is handed the identifiers the app already has
  *  and returns the URLs `VideoPlayer` takes. It is the only part of the app

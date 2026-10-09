@@ -92,6 +92,23 @@ const HEADERS = {
     'Origin': BASE_URL
 };
 
+/**
+ * The ten servers, and the one thing that tells them apart.
+ *
+ * `proxy` marks a server whose streams a browser cannot fetch for itself. Most
+ * of these hand back a URL on a Cloudflare Worker that fronts the upstream host,
+ * injects the `Referer` that host demands and echoes our `Origin` back — so the
+ * page plays those directly, which is why a source from here normally carries no
+ * `headers`.
+ *
+ * Klikxxi does not. It answers with a bare rotating hostname that returns 404 to
+ * anything arriving without a `Referer` and sends no CORS header at all, so
+ * every one of its streams was dead on arrival in the player: it went into the
+ * source menu, was chosen, and played nothing. That was measured rather than
+ * assumed — eight klikxxi streams across eight titles, not one of them fetchable
+ * from a browser, against two of two from flixhq — and it is the whole reason
+ * `src/app/api/vidnest/proxy/route.js` exists.
+ */
 const SERVERS = [
     { path: 'moviebox', query: '' },
     { path: 'allmovies', query: '' },
@@ -102,7 +119,7 @@ const SERVERS = [
     { path: 'flixhq', query: '' },
     { path: 'vidlink', query: '' },
     { path: 'onehd', query: '?server=upcloud' },
-    { path: 'klikxxi', query: '' }
+    { path: 'klikxxi', query: '', proxy: true }
 ];
 
 /**
@@ -157,7 +174,7 @@ export async function inspectVidnest({
             if (!json.encrypted || !json.data) return null;
 
             const decrypted = decrypt(json.data);
-            return { server: server.path, data: decrypted };
+            return { server: server.path, proxy: server.proxy === true, data: decrypted };
         } catch {
             // A timeout, an abort, a dead host and a payload that will not
             // decrypt all land here for the same reason: this server has no
@@ -175,8 +192,17 @@ export async function inspectVidnest({
 
     for (const result of results) {
         if (result.status === 'fulfilled' && result.value) {
-            const { server, data } = result.value;
+            const { server, proxy, data } = result.value;
             const parsed = parseServerResponse(server, data);
+
+            // Carried on the stream rather than decided again by whoever reads
+            // this: which server a stream came from is dropped before the answer
+            // leaves the route, so this flag is the only trace of it that
+            // survives to the point where the URL has to be wrapped.
+            if (proxy) {
+                for (const stream of parsed.streams) stream.proxy = true;
+            }
+
             sources.push(...parsed.streams);
             subtitles.push(...parsed.subtitles);
         }

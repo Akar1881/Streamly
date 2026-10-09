@@ -29,6 +29,25 @@ function mimeType(stream) {
   return 'video/mp4';
 }
 
+/**
+ * A stream the browser cannot fetch for itself, pointed through our proxy.
+ *
+ * One of the ten servers behind this provider answers on a bare rotating host
+ * that returns 404 to anything without a `Referer` and sends no CORS header at
+ * all, so the page can never read its streams however it asks for them. The
+ * route does the asking instead, with the header, and rewrites the playlists so
+ * the segments come the same way — see `src/app/api/vidnest/proxy/route.js`.
+ *
+ * Relative, and deliberately so. This runs in the browser, so it has to resolve
+ * against whatever origin the page was served from; an absolute URL would have
+ * to be built on the server, where the scheme is not necessarily the one the
+ * viewer is using, and behind a proxy that terminates TLS it would be the wrong
+ * one. `videasy-provider.js` makes the same choice for the same reason.
+ */
+function proxied(url) {
+  return `/api/vidnest/proxy?url=${encodeURIComponent(url)}`;
+}
+
 export default {
   id: 'vidnest',
   label: CODENAME,
@@ -63,7 +82,7 @@ export default {
       sources: streams
         .filter((stream) => typeof stream.url === 'string' && stream.url.length > 0)
         .map((stream, index) => ({
-          src: stream.url,
+          src: stream.proxy ? proxied(stream.url) : stream.url,
           type: mimeType(stream),
           label: `${CODENAME} ${index + 1}`,
         })),

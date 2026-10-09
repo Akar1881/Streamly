@@ -21,6 +21,7 @@
 import site from '@config/site';
 import { cacheKey, isCached, isShared, writeCached } from './cache';
 import { SubtitleError } from './error';
+import { fetchProviderSubtitle } from './provider';
 import { parseSubtitle, toVtt } from './srt';
 import { translateCues, translateKey } from './translate';
 import { fetchSourceSubtitle, findSource } from './wyzie';
@@ -119,25 +120,44 @@ function run(job, request) {
   // The job may outlive the request that started it (that is the point of the
   // timeout below), so it updates the record rather than returning a value.
   const work = (async () => {
-    // Wyzie first, because it is the only source that hands back a link the
-    // player can use: the same file it gives us to translate becomes the
-    // original-language track. Videasy's HLS caption is a better timing match
-    // when it exists, but it only ever exists as bytes on this side, so it is
-    // the fallback.
+    // Three sources, best first, and the order is the whole of the policy.
     //
-    // The call is guarded rather than left to `??` because Wyzie *throws* on a
-    // quota cap or a missing key — a `??` would never be reached, and a Wyzie
-    // limit would take down a translation the HLS caption could still supply.
-    // Its error is kept, though: its codes are the ones the waiting screen
-    // knows how to explain.
+    // The provider's own subtitle leads, because it was shipped with the copy of
+    // the film the viewer is watching and so its timings match the picture. It is
+    // also the only one that can be *known* to match: a subtitle found separately
+    // is timed to some other release, and on a film re-cut between regions it is
+    // timed to some other film.
+    //
+    // Wyzie is next, and it is the one that hands back a link the player can use
+    // — the same file it gives us to translate becomes the original-language
+    // track. Videasy's HLS caption is the last resort: a better timing match than
+    // the provider's when it exists, but it only ever exists as bytes on this
+    // side, so it has no link to hand out and it costs a whole second lookup.
+    //
+    // Each call is guarded rather than chained with `??` because Wyzie *throws*
+    // on a quota cap or a missing key — a `??` would never be reached, and a
+    // Wyzie limit would take down a translation the provider's own subtitle could
+    // still supply. Its error is kept, though: its codes are the ones the waiting
+    // screen knows how to explain.
     let source = null;
     let sourceError = null;
 
-    try {
-      source = await fetchSourceSubtitle(request);
-    } catch (error) {
-      if (error?.name === 'AbortError') throw error;
-      sourceError = error;
+    if (request.sourceUrl) {
+      try {
+        source = await fetchProviderSubtitle(request.sourceUrl, { signal: request.signal });
+      } catch (error) {
+        if (error?.name === 'AbortError') throw error;
+        sourceError = error;
+      }
+    }
+
+    if (!source) {
+      try {
+        source = await fetchSourceSubtitle(request);
+      } catch (error) {
+        if (error?.name === 'AbortError') throw error;
+        sourceError = sourceError ?? error;
+      }
     }
 
     source ??= await fetchVideasySubtitle(request);
@@ -260,6 +280,11 @@ function run(job, request) {
  * @param {number} request.tmdbId
  * @param {number} [request.season]
  * @param {number} [request.episode]
+ * @param {string} [request.sourceUrl]  the playing provider's own subtitle, if it
+ *        offered one — tried before anything we go looking for. Deliberately not
+ *        part of the cache key: the translation is stored per title, so the first
+ *        viewer's source is the one every later viewer gets, and a faster source
+ *        for the same film is not worth a second translation of it.
  * @returns {Promise<{ job: object, work: Promise<string>|null }>} — never throws
  */
 export async function prepareSubtitle(request) {

@@ -2,6 +2,7 @@ import { after, NextResponse } from 'next/server';
 import site from '@config/site';
 import { cacheKey, isCached, publicUrl } from '@/lib/subtitles/cache';
 import { getJob, prepareSubtitle, sourceLink } from '@/lib/subtitles/jobs';
+import { isFetchableSubtitleUrl } from '@/lib/subtitles/provider';
 
 /**
  * ============================================================================
@@ -10,9 +11,12 @@ import { getJob, prepareSubtitle, sourceLink } from '@/lib/subtitles/jobs';
  *
  *  The waiting screen's two calls:
  *
- *    POST /api/subtitles/prepare   { mediaType, tmdbId, season?, episode? }
+ *    POST /api/subtitles/prepare   { mediaType, tmdbId, season?, episode?, sourceUrl? }
  *      → starts the job, or joins the one already running for that title,
  *        or answers straight from the store. Returns the first status.
+ *        `sourceUrl` is the playing provider's own subtitle, when it has one:
+ *        the translation is made from it in preference to anything we look up,
+ *        because it is timed to the copy being watched. See `subtitles/jobs.js`.
  *
  *    GET  /api/subtitles/prepare?mediaType=…&tmdbId=…
  *      → the same status object, polled until it is `ready` or `failed`.
@@ -104,7 +108,18 @@ async function toResponse(request, job, target) {
   );
 }
 
-/** Reads the title out of a request, or explains why it cannot. */
+/**
+ * Reads the title out of a request, or explains why it cannot.
+ *
+ * `sourceUrl` is the playing provider's own subtitle, offered by the client so
+ * the translation can be made from the file that matches the picture. It is
+ * optional, and it is treated as a hint rather than an instruction: the server
+ * only fetches URLs it would fetch for a stream anyway (see `isFetchableSubtitleUrl`),
+ * and one it will not fetch is dropped without complaint. A provider handing us
+ * something unusable is an ordinary reason to fall back to Wyzie — it is not a
+ * malformed request, and answering 400 would take subtitles away from a viewer
+ * over a detail they cannot see.
+ */
 function readTarget(source) {
   const mediaType = source.mediaType === 'tv' ? 'tv' : source.mediaType === 'movie' ? 'movie' : null;
   const tmdbId = Number(source.tmdbId);
@@ -112,6 +127,8 @@ function readTarget(source) {
   if (!mediaType || !Number.isInteger(tmdbId) || tmdbId <= 0) {
     return { error: 'mediaType must be "movie" or "tv", and tmdbId a positive integer' };
   }
+
+  const sourceUrl = isFetchableSubtitleUrl(source.sourceUrl) ? source.sourceUrl : null;
 
   if (mediaType === 'tv') {
     const season = Number(source.season);
@@ -121,10 +138,10 @@ function readTarget(source) {
       return { error: 'A TV episode needs integer season and episode numbers' };
     }
 
-    return { target: { mediaType, tmdbId, season, episode } };
+    return { target: { mediaType, tmdbId, season, episode, sourceUrl } };
   }
 
-  return { target: { mediaType, tmdbId } };
+  return { target: { mediaType, tmdbId, sourceUrl } };
 }
 
 export async function POST(request) {

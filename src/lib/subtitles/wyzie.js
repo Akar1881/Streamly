@@ -20,6 +20,7 @@
 import { parseToVTT, searchSubtitles, withDownloadOptions, WyzieError } from 'wyzie-lib';
 import site from '@config/site';
 import { SubtitleError } from './error';
+import { stripPromoCues } from './promo';
 
 /** Wyzie's key, or null when the site is running without the feature configured. */
 export function wyzieKey() {
@@ -58,31 +59,6 @@ function toSubtitleError(error, action) {
     error?.message ?? `Subtitle ${action} failed`,
     'fetch-failed',
   );
-}
-
-/**
- * The free tier's promotional cue.
- *
- * A free key's converted file opens with an inserted card — "You're on the free
- * plan. Unlock every source, AI translation & ad-free subs → store.wyzie.io" —
- * running from zero to six seconds. It is not part of the subtitle, so carrying
- * it through would open every film we translate with an English advert, and
- * spend a translate request on it.
- *
- * The marker is the link rather than the wording: the marketing copy is theirs
- * to reword, but a line of dialogue will never contain `store.wyzie.io`.
- */
-const WATERMARK = /store\.wyzie\.io/i;
-
-/** VTT cues are blank-line separated, so a block is one cue — never half of one. */
-const BLOCK_BREAK = /\r?\n[ \t]*\r?\n/;
-
-/** Drops the promotional block, if the file has one. */
-function stripWatermark(vtt) {
-  const blocks = vtt.split(BLOCK_BREAK);
-  const kept = blocks.filter((block) => !WATERMARK.test(block));
-
-  return kept.length === blocks.length ? vtt : kept.join('\n\n');
 }
 
 /**
@@ -164,7 +140,7 @@ export async function findSource({ mediaType, tmdbId, season, episode }) {
   // things follow. Wyzie counts **every fetch of the link** against the key's
   // request quota, so it is worth looking up lazily rather than on every page
   // view. And it is the raw file, so it still opens with the free tier's
-  // promotional card — `stripWatermark` removes that only from the copy we
+  // promotional card — `stripPromoCues` removes that only from the copy we
   // translate.
   return {
     url: withDownloadOptions(chosen, { to: 'vtt', plain: true }),
@@ -185,7 +161,7 @@ export async function fetchSourceSubtitle(request) {
 
   try {
     return {
-      vtt: stripWatermark(await parseToVTT(found.url)),
+      vtt: stripPromoCues(await parseToVTT(found.url)),
       url: found.url,
       language: found.language,
       source: found.source,

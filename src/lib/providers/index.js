@@ -93,6 +93,9 @@
 
 import site from '@config/site';
 import videasy from './videasy-provider';
+import vidnest from './vidnest-provider';
+import vidrock from './vidrock-provider';
+import { measureStream } from './quality';
 
 /**
  * Every implemented provider, keyed by its `id`.
@@ -101,7 +104,7 @@ import videasy from './videasy-provider';
  * listed in `config/site.js` with no module here is skipped rather than
  * crashing the watch page, so a typo costs a switcher entry, not the site.
  */
-const PROVIDERS = { videasy };
+const PROVIDERS = { videasy, vidnest, vidrock };
 
 /**
  * What to call a provider that has no `label`.
@@ -185,4 +188,124 @@ export async function resolvePlayback({
     tracks: playback.tracks ?? [],
     poster: playback.poster ?? null,
   };
+}
+
+/**
+ * How long any one provider gets to answer before it is out of the running.
+ *
+ * The list order in `config/site.js` decides ties, not the outcome, so a provider
+ * that never answers would hold up the choice for as long as it felt like — and
+ * they do not all defend themselves. One here has a deadline of its own on every
+ * request it makes; the other passes the signal straight through to a chain of
+ * fetches and will sit there until something else cancels it. So the deadline is
+ * ours, and it is the only thing standing between a hung source and a watch page
+ * that never starts.
+ *
+ * Five seconds is chosen against the slow one, which fans out to ten hosts and
+ * can legitimately spend a few seconds doing it. Anything that has not answered
+ * by then is not a source worth defaulting to, whatever it eventually says.
+ */
+const COMPARE_TIMEOUT_MS = 5_000;
+
+/**
+ * Asks every configured provider, and says which of them answered best.
+ *
+ * This is the difference between "the first source in the config file" and "the
+ * best source for this title". It is not free, and the cost is the whole reason
+ * this is one function with a comment rather than a line in the caller: every
+ * provider is asked on every title, where before only one was, so a watch page
+ * now costs the sum of everyone's lookups upstream even though it plays exactly
+ * one of them. What it buys is that the film starts on the best copy available
+ * rather than on whichever service happened to be listed first — a film that
+ * came back as 2160p from one provider and 800p from another plays at 2160p
+ * without the viewer having to know there was a choice.
+ *
+ * They are asked concurrently, so the wait is the slowest provider rather than
+ * the total. Everything that came back is returned, not just the winner: the
+ * source menu needs to know what the others had, both to mark the ones that
+ * came up empty and so that switching to one costs nothing at the moment it is
+ * asked for.
+ *
+ * Only the first source of each provider is measured, because only the first is
+ * ever attached — measuring the rest would be work spent on something no viewer
+ * can reach.
+ *
+ * @returns {Promise<{chosen: object|null, answers: object[]}>}
+ *          `chosen` is one answer, or null when nobody had this title.
+ */
+export async function resolveBestPlayback({
+  mediaType,
+  tmdbId,
+  imdbId,
+  season,
+  episode,
+  signal,
+  timeoutMs = COMPARE_TIMEOUT_MS,
+}) {
+  /** One provider, asked under our deadline as well as the caller's. */
+  async function ask(provider) {
+    const controller = new AbortController();
+    const relay = () => controller.abort();
+    signal?.addEventListener('abort', relay, { once: true });
+
+    let gaveUp = false;
+    const deadline = setTimeout(() => {
+      gaveUp = true;
+      controller.abort();
+    }, timeoutMs);
+
+    const answer = { providerId: provider.id, label: provider.label ?? fallbackLabel(provider.id) };
+
+    try {
+      const playback = await resolvePlayback({
+        providerId: provider.id,
+        mediaType,
+        tmdbId,
+        imdbId,
+        season,
+        episode,
+        signal: controller.signal,
+      });
+
+      const source = playback?.sources?.[0];
+
+      // A provider that measured its own stream is believed over the browser's
+      // probe, for two reasons. It did the work where the stream is reachable —
+      // VidRock's hosts want a referer a page cannot send, so a probe from here
+      // would simply come back empty. And it knows which of its streams it is
+      // offering, where this can only see the URL of the one at index 0.
+      const quality =
+        source?.quality ?? (source?.src ? await measureStream(source.src, { signal: controller.signal }) : null);
+
+      return { ...answer, playback, quality, threw: false, gaveUp };
+    } catch (cause) {
+      // A provider that threw is a fault, which is a different sentence to the
+      // viewer than "this title is not here" — but an abort is neither, it is
+      // this function's own doing, and is reported as nothing at all.
+      return {
+        ...answer,
+        playback: null,
+        quality: null,
+        threw: !gaveUp && cause?.name !== 'AbortError',
+        gaveUp,
+      };
+    } finally {
+      clearTimeout(deadline);
+      signal?.removeEventListener('abort', relay);
+    }
+  }
+
+  const answers = await Promise.all(listProviders().map(ask));
+  const playable = answers.filter((answer) => answer.playback);
+
+  // Ties keep the earlier answer, because `listProviders` is in config order and
+  // a reduce that only replaces on strictly greater preserves it. Two providers
+  // offering the same resolution is the common case, and there the config file
+  // is the only preference anyone has expressed.
+  const chosen = playable.reduce(
+    (leader, answer) => ((answer.quality?.width ?? 0) > (leader.quality?.width ?? 0) ? answer : leader),
+    playable[0],
+  );
+
+  return { chosen: chosen ?? null, answers };
 }

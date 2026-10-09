@@ -1,21 +1,18 @@
-import { getStreams } from './hyper.js';
+// test.js
+import { inspectVidrock } from './vidrock.js';
 
-async function testSeriesIds() {
-    const tests = [
-        { name: 'TMDB integer format', params: { tmdbId: '1399', mediaType: 'tv', season: 1, episode: 1 } },
-        { name: 'TVDB format', params: { imdbId: '121361', mediaType: 'tv', season: 1, episode: 1 } }, // Game of Thrones TVDB ID
-    ];
+async function test() {
+    try {
+        console.log('Testing VidRock Movie (TMDB: 533535)...');
+        const movieResult = await inspectVidrock({ tmdbId: '533535', mediaType: 'movie' });
+        console.log('Movie Result:', JSON.stringify(movieResult, null, 2));
 
-    for (const test of tests) {
-        try {
-            console.log(`Testing ${test.name}...`);
-            const result = await getStreams(test.params);
-            console.log(`Success! Found ${result.streams.length} streams.`);
-            break;
-        } catch (err) {
-            console.log(`Failed: ${err.message}`);
-        }
+        console.log('\nTesting VidRock TV Show (TMDB: 94997, S01E01)...');
+        const tvResult = await inspectVidrock({ tmdbId: '94997', mediaType: 'tv', season: 1, episode: 1 });
+        console.log('TV Result:', JSON.stringify(tvResult, null, 2));
+    } catch (error) {
+        console.error('Test failed:', error.message);
     }
 }
 
-testSeriesIds();
+test();

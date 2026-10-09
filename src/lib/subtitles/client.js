@@ -36,6 +36,18 @@ const WORKING = { status: 'working', phase: 'searching', progress: 0 };
  * @param {number} request.tmdbId
  * @param {number} [request.season]
  * @param {number} [request.episode]
+ * @param {string|null} [request.sourceUrl]
+ *        the playing provider's own subtitle, when it has one. Sent with the
+ *        start request only — the job is stored per title, so a poll has nothing
+ *        to add and a later poll would otherwise claim a different source for a
+ *        translation already made.
+ * @param {boolean} [request.providerSettled]
+ *        whether the providers have finished answering for this title. Nothing
+ *        starts until they have, and that is the point of it: the translation
+ *        has to be made from the provider's subtitle when there is one, and
+ *        before the providers answer nobody knows whether there is one. Starting
+ *        early meant always translating Wyzie's copy and then discarding it —
+ *        which is also what the viewer waited through the progress screen for.
  * @returns {{
  *   status: 'off'|'working'|'ready'|'failed',
  *   phase: string,
@@ -47,7 +59,14 @@ const WORKING = { status: 'working', phase: 'searching', progress: 0 };
  *   resetAt: string|null,
  * }}
  */
-export function useTranslatedSubtitle({ mediaType, tmdbId, season, episode }) {
+export function useTranslatedSubtitle({
+  mediaType,
+  tmdbId,
+  season,
+  episode,
+  sourceUrl = null,
+  providerSettled = true,
+}) {
   const enabled = Boolean(site.subtitles.enabled);
 
   const [state, setState] = useState(enabled ? WORKING : { status: 'off' });
@@ -63,7 +82,7 @@ export function useTranslatedSubtitle({ mediaType, tmdbId, season, episode }) {
   }, []);
 
   useEffect(() => {
-    if (!enabled || !tmdbId) return undefined;
+    if (!enabled || !tmdbId || !providerSettled) return undefined;
 
     const controller = new AbortController();
     const query = { mediaType, tmdbId, ...(season && episode ? { season, episode } : {}) };
@@ -108,7 +127,7 @@ export function useTranslatedSubtitle({ mediaType, tmdbId, season, episode }) {
         const response = await fetch('/api/subtitles/prepare', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(query),
+          body: JSON.stringify(sourceUrl ? { ...query, sourceUrl } : query),
           signal: controller.signal,
         });
 
@@ -194,7 +213,7 @@ export function useTranslatedSubtitle({ mediaType, tmdbId, season, episode }) {
     prepare();
 
     return () => controller.abort();
-  }, [enabled, mediaType, tmdbId, season, episode]);
+  }, [enabled, mediaType, tmdbId, season, episode, sourceUrl, providerSettled]);
 
   return state;
 }

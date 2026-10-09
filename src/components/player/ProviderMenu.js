@@ -22,6 +22,13 @@ import PlayerMenu, { MenuNote, MenuRow } from '@/components/player/PlayerMenu';
  *  a provider with nothing for *this* title will have nothing for it a second
  *  later and on every other title it is the same provider, so there is nothing
  *  a click could reach.
+ *
+ *  The number on the right is the resolution the source was measured at, which
+ *  is also the reason the playing one is playing — the site starts the best
+ *  stream it can find rather than the first in the config, and a viewer who
+ *  wonders why the second name is the one that is ticked can see the answer
+ *  without opening anything. Reaching for a different source is still entirely
+ *  theirs to do; this menu overrides the choice rather than reporting it.
  * ============================================================================
  */
 
@@ -30,25 +37,35 @@ import PlayerMenu, { MenuNote, MenuRow } from '@/components/player/PlayerMenu';
  * @param {{id: string, label: string}[]} props.providers
  * @param {string} props.providerId     the one currently playing
  * @param {string[]} props.unavailable  ids that came back empty or failed
+ * @param {Record<string, {label: string}>} [props.qualities]
+ *        what each source measured at, by id — missing where it could not be
+ *        measured, which is shown as nothing rather than as a guess
  * @param {(id: string) => void} props.onSelect
  * @param {() => void} props.onClose
  */
-export default function ProviderMenu({ providers, providerId, unavailable = [], onSelect, onClose }) {
+export default function ProviderMenu({
+  providers,
+  providerId,
+  unavailable = [],
+  qualities = {},
+  onSelect,
+  onClose,
+}) {
   return (
     <PlayerMenu title="Source" onClose={onClose}>
       {providers.map((provider) => {
         const active = provider.id === providerId;
-        // The active one is never disabled, even when it is the source that
-        // just failed — the player's Retry button and this row are the same
-        // request, and greying out the only row that can repeat it would leave
-        // a viewer with no way back from a blip.
+        // The active one is never disabled. It cannot be unavailable — nothing
+        // that came back empty is ever chosen — but the row that says what is
+        // playing is the one row a viewer must be able to read.
         const dead = !active && unavailable.includes(provider.id);
+        const quality = qualities[provider.id]?.label;
 
         return (
           <MenuRow
             key={provider.id}
             label={provider.label}
-            trailing={dead ? 'Unavailable' : undefined}
+            trailing={dead ? 'Unavailable' : quality}
             selected={active}
             disabled={dead}
             onClick={() => onSelect(provider.id)}
@@ -57,7 +74,8 @@ export default function ProviderMenu({ providers, providerId, unavailable = [], 
       })}
 
       <MenuNote>
-        If a title will not start, or keeps stopping, another source often has it.
+        This started the best picture it could find. If it will not play, or keeps
+        stopping, another source often has it.
       </MenuNote>
     </PlayerMenu>
   );

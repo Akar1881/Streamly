@@ -341,8 +341,16 @@ const site = {
   /* ------------------------------------------------------------------ */
   player: {
     /**
-     * Where playback comes from, in the order they are offered. The first is
-     * the default.
+     * Where playback comes from, in the order they are offered.
+     *
+     * The order is a **tie-break, not a default**. Every id listed here is asked
+     * for each title, and the one that comes back with the best picture plays —
+     * see `resolveBestPlayback` in `src/lib/providers/index.js`. So putting an id
+     * first does not put it on screen; it decides only between providers that
+     * measured the same, which is the common case and the one order is good for.
+     *
+     * That also means every id here costs its lookup on every watch page, even
+     * when it loses. Listing one id makes this free.
      *
      * Each id names a module in `src/lib/providers/`. Adding one is a module
      * and a line in that directory's `PROVIDERS` map — the worked example and
@@ -353,7 +361,7 @@ const site = {
      * **Empty is a valid state.** With nothing listed the watch pages say no
      * source is configured rather than showing a player that cannot play.
      */
-    providers: ['videasy'],
+    providers: ['videasy', 'vidnest', 'vidrock'],
     /** Start playing as soon as the page opens. */
     autoplay: true,
     /** Offer a "Next episode" button on TV playback pages. */

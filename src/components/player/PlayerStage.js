@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import site from '@config/site';
-import { listProviders, resolvePlayback } from '@/lib/providers';
+import { listProviders, resolveBestPlayback } from '@/lib/providers';
 import { useTranslatedSubtitle } from '@/lib/subtitles/client';
+import { dedupeTracks, pickSourceTrack } from '@/lib/player/tracks';
 import { getProgressEntry, recordProgress } from '@/lib/storage';
 import { backdropUrl, posterUrl } from '@/lib/images';
 import Icon from '@/components/ui/Icon';
@@ -31,8 +32,13 @@ import SubtitleProgress from '@/components/player/SubtitleProgress';
  *       title; the translation is cached, so everyone after them goes straight
  *       to the player. Waiting is worth it because starting the film and
  *       gaining subtitles halfway through is worse than starting late.
- *    3. Ask the provider. Async, cancellable — a viewer who leaves mid-request
- *       should not leave a request running.
+ *    3. Ask every provider, and play the best answer. Async, cancellable — a
+ *       viewer who leaves mid-request should not leave a request running. "Best"
+ *       is measured rather than assumed: each stream is probed for the
+ *       resolution it tops out at, and the widest one wins, with the config
+ *       order settling ties. See `resolveBestPlayback` in
+ *       `src/lib/providers/index.js` for why this is worth a resolve per
+ *       provider on every title.
  *    4. Play.
  *
  *  The subtitle and the source are resolved independently and in parallel, so
@@ -71,18 +77,6 @@ function noticeFor(code) {
         body: 'The subtitles for this title could not be prepared. Playing without them.',
       };
   }
-}
-
-/**
- * The same list with `id` added, or the same list back if it is already there.
- *
- * Returning the original array rather than a fresh equal one matters: this is
- * handed to `setState` on every resolve, and a new array each time would
- * re-render the player — and so re-run every effect that depends on it — each
- * time a provider was re-asked.
- */
-function withUnavailable(list, id) {
-  return list.includes(id) ? list : [...list, id];
 }
 
 /** The box shown in place of the player when there is nothing to play. */
@@ -134,7 +128,15 @@ function ChannelLink() {
  */
 export default function PlayerStage({ media, season, episode }) {
   const providers = useMemo(() => listProviders(), []);
-  const [providerId, setProviderId] = useState(providers[0]?.id ?? null);
+
+  /**
+   * Which provider is playing, chosen by us and changeable by the viewer.
+   *
+   * Null until the comparison comes back, which is why it can no longer be
+   * seeded from the config: the whole point of this page is that the first id in
+   * `player.providers` is a tie-break rather than an answer.
+   */
+  const [providerId, setProviderId] = useState(null);
   const [playback, setPlayback] = useState(null);
   const [resolving, setResolving] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -142,8 +144,8 @@ export default function PlayerStage({ media, season, episode }) {
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   /**
    * Bumped by the retry button. It is in the resolve effect's dependencies and
-   * nowhere else, so re-asking the provider is a re-render rather than a second
-   * code path that could drift from the first.
+   * nowhere else, so re-asking every provider is a re-render rather than a
+   * second code path that could drift from the first.
    */
   const [attempt, setAttempt] = useState(0);
 
@@ -162,7 +164,12 @@ export default function PlayerStage({ media, season, episode }) {
   const [startAt, setStartAt] = useState(0);
 
   /**
-   * Which providers have come back with nothing for this title.
+   * What every provider said about this title, and how good it turned out to be.
+   *
+   * All of them, not just the winner, because three things need the rest: the
+   * menu marks the ones that came up empty, it reads each one's measured quality
+   * to say why the choice went where it did, and switching to one is then a
+   * lookup rather than a second round of requests.
    *
    * Session state, on purpose. A provider that has nothing for a title will not
    * have it a moment later, so re-asking on every render would be a request per
@@ -170,13 +177,55 @@ export default function PlayerStage({ media, season, episode }) {
    * worth trying again the next time the viewer opens a title, and starting from
    * empty here is what makes that free.
    */
-  const [unavailableIds, setUnavailableIds] = useState([]);
+  const [answers, setAnswers] = useState([]);
+
+  /**
+   * The subtitles the playing provider brought, reduced to one per language.
+   *
+   * Reduced here rather than at the provider, because this is the first place
+   * that has the whole list in hand and a reason to care: a provider is right to
+   * report everything it has — that is a fact about the source — while a menu is
+   * a thing somebody has to read.
+   */
+  const providerTracks = useMemo(() => dedupeTracks(playback?.tracks ?? []), [playback]);
+
+  /**
+   * The file the translation is made from, decided once and then left alone.
+   *
+   * Once, because the alternative is worse in both directions. Deciding it on
+   * every render would re-run a translation every time the viewer changed
+   * source; deciding it never would mean the answer arrived too late to be used.
+   * So it is settled at the first moment it *can* be — when the providers have
+   * finished answering — and it does not move after that.
+   *
+   * `null` is "not decided yet" and is what holds the translation back. That is
+   * the whole fix for the ordering: the hook used to start the moment the page
+   * mounted, which is before any provider has said whether it has a subtitle,
+   * so it always translated Wyzie's copy and the provider's own file — the one
+   * timed to the picture being watched — was never used at all.
+   */
+  const [translationSource, setTranslationSource] = useState(null);
+
+  useEffect(() => {
+    if (resolving || translationSource) return;
+
+    const pick = pickSourceTrack(
+      providerTracks,
+      site.subtitles.sourceLanguageLabel ?? site.subtitles.sourceLanguage,
+    );
+
+    // Wrapped rather than stored bare, so that "no provider subtitle" is a
+    // decision that has been made rather than one still pending.
+    setTranslationSource({ url: pick?.src ?? null });
+  }, [resolving, providerTracks, translationSource]);
 
   const subtitle = useTranslatedSubtitle({
     mediaType: media.mediaType,
     tmdbId: media.id,
     season,
     episode,
+    sourceUrl: translationSource?.url ?? null,
+    providerSettled: translationSource !== null,
   });
 
   // The translated track, once it exists. `default` is what makes the player
@@ -202,7 +251,11 @@ export default function PlayerStage({ media, season, episode }) {
   // track appears beside the Sorani one however the Sorani one was obtained.
   //
   // It is null for the handful of titles whose source subtitle only exists as
-  // an HLS caption, which has no link to hand out.
+  // an HLS caption, which has no link to hand out. It is also dropped from the
+  // menu when the provider brought its own subtitles — but not because it stops
+  // being true: it is still the file this translation was made from, and it is
+  // what the viewer would have got before any provider started offering them.
+  // It is a second English track for the same film, and one is enough.
   //
   // Never `default`: it is the second choice on this site, not the first.
   const original = useMemo(() => {
@@ -216,40 +269,49 @@ export default function PlayerStage({ media, season, episode }) {
     };
   }, [subtitle.sourceUrl]);
 
-  // Whatever the provider offered, plus ours. Ours goes last so a provider's
-  // own tracks keep the order it chose; `default` decides which one is on, not
-  // the position.
-  //
-  // `default` has to be exclusive, though, and the player resolves it by taking
-  // the *first* track that claims it. With our track appended last, a provider
-  // that marks one of its own as default would win that draw and the translation
-  // would arrive switched off — on a Sorani site, the one track the viewer came
-  // for. So when ours is the default, the others stop claiming it. They stay in
-  // the menu, one click away.
+  /**
+   * The captions menu's list: the provider's own subtitles, then ours.
+   *
+   * A provider that brought subtitles brought its own English along with them,
+   * so Wyzie's copy is only added when there were none — otherwise the menu
+   * would offer two English tracks for one film, from two different releases,
+   * with nothing to say which was which. The translated track is added either
+   * way: it is the reason the site exists, not a fallback.
+   *
+   * `default` has to be exclusive, and the player resolves it by taking the
+   * *first* track that claims it. With our track appended last, a provider that
+   * marked one of its own as default would win that draw and the translation
+   * would arrive switched off — on a Sorani site, the one track the viewer came
+   * for. So when ours is the default, the others stop claiming it. They stay in
+   * the menu, one click away.
+   */
   const tracks = useMemo(() => {
-    const offered = playback?.tracks ?? [];
-    if (!track) return original ? [...offered, original] : offered;
-
     const others = [
-      ...offered,
-      ...(original ? [original] : []),
+      ...providerTracks,
+      ...(providerTracks.length || !original ? [] : [original]),
     ];
+
+    if (!track) return others;
 
     return track.default
       ? [...others.map(({ default: _isDefault, ...rest }) => rest), track]
       : [...others, track];
-  }, [playback, track, original]);
+  }, [providerTracks, track, original]);
 
   /**
-   * Ask the selected provider what to play.
+   * Ask every provider what to play, and start the best of them.
    *
    * Keyed on the ids rather than on `media`, because the object identity is
    * not something this component controls and a new one every render would
-   * re-ask the provider forever.
+   * re-ask the provider forever. It is deliberately *not* keyed on `providerId`
+   * any more: every provider is asked once per title regardless, so the viewer
+   * choosing a different one is a switch to an answer already in hand, not a
+   * reason to ask again.
    */
   useEffect(() => {
-    if (!providerId) {
+    if (providers.length === 0) {
       setPlayback(null);
+      setAnswers([]);
       setResolving(false);
       setFailed(false);
       return undefined;
@@ -261,8 +323,7 @@ export default function PlayerStage({ media, season, episode }) {
     setResolving(true);
     setFailed(false);
 
-    resolvePlayback({
-      providerId,
+    resolveBestPlayback({
       mediaType: media.mediaType,
       tmdbId: media.id,
       imdbId: media.imdbId,
@@ -270,24 +331,23 @@ export default function PlayerStage({ media, season, episode }) {
       episode,
       signal: controller.signal,
     })
-      .then((result) => {
+      .then(({ chosen, answers: asked }) => {
         if (cancelled) return;
-        setPlayback(result);
-        // A provider answering with a stream clears its mark; `resolvePlayback`
-        // flattens a miss and a throw into the same `null`, so this is the one
-        // place that can tell "it works" from "not this one".
-        setUnavailableIds((current) =>
-          result ? current.filter((id) => id !== providerId) : withUnavailable(current, providerId),
-        );
+
+        setAnswers(asked);
+        setProviderId(chosen?.providerId ?? null);
+        setPlayback(chosen?.playback ?? null);
+        // Nothing playable because everyone came up empty is a different
+        // sentence to the viewer than nothing playable because something broke,
+        // and only this side can tell them apart: a timeout and a thrown error
+        // are both the second kind, and both are worth a retry button.
+        setFailed(!chosen && asked.some((answer) => answer.threw || answer.gaveUp));
         setResolving(false);
       })
       .catch((cause) => {
         if (cancelled || cause?.name === 'AbortError') return;
-        // A provider that throws is a fault, which is a different sentence to
-        // the viewer than "this title is not here".
         setPlayback(null);
         setFailed(true);
-        setUnavailableIds((current) => withUnavailable(current, providerId));
         setResolving(false);
       });
 
@@ -295,26 +355,50 @@ export default function PlayerStage({ media, season, episode }) {
       cancelled = true;
       controller.abort();
     };
-  }, [providerId, media.mediaType, media.id, media.imdbId, season, episode, attempt]);
+  }, [providers, media.mediaType, media.id, media.imdbId, season, episode, attempt]);
 
   /**
    * The viewer picking a source from the player's menu.
    *
-   * Choosing the one already selected is not a no-op: on a source that has just
-   * failed it is the same request the Retry button makes, and the menu is where
-   * a viewer who has just been told the source is unavailable is most likely to
-   * ask again — so it re-asks. On a source that is playing it means nothing, and
-   * is ignored rather than tearing down a working stream to re-resolve it.
+   * Every provider was already asked for this title, so this is a switch between
+   * answers rather than a request — which is the difference between the menu
+   * being instant and it making the viewer wait a second and a half to change
+   * their mind. A provider that came back empty is not selectable at all, so
+   * there is nothing here for the "ask again" case the menu used to carry.
    */
   const chooseProvider = useCallback(
     (id) => {
-      if (id === providerId) {
-        if (failed) setAttempt((count) => count + 1);
-        return;
-      }
+      const answer = answers.find((entry) => entry.providerId === id);
+      if (!answer?.playback) return;
+
       setProviderId(id);
+      setPlayback(answer.playback);
     },
-    [providerId, failed],
+    [answers],
+  );
+
+  /** Sources that came up empty for this title — the menu strikes them out. */
+  const unavailableIds = useMemo(
+    () => answers.filter((answer) => !answer.playback).map((answer) => answer.providerId),
+    [answers],
+  );
+
+  /**
+   * How good each source turned out to be, by id.
+   *
+   * Shown in the source menu so the automatic choice is legible rather than
+   * mysterious. A viewer who sees the site pick the second entry deserves to
+   * know it picked it for a reason, and "2160p" next to one name and "800p"
+   * next to the other is that reason in the space of four characters.
+   */
+  const qualities = useMemo(
+    () =>
+      Object.fromEntries(
+        answers
+          .filter((answer) => answer.quality)
+          .map((answer) => [answer.providerId, answer.quality]),
+      ),
+    [answers],
   );
 
   /**
@@ -462,6 +546,7 @@ export default function PlayerStage({ media, season, episode }) {
           providers={providers}
           providerId={providerId}
           unavailable={unavailableIds}
+          qualities={qualities}
           onSelectProvider={chooseProvider}
         />
       ) : (

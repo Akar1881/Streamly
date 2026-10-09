@@ -155,19 +155,6 @@ export default function VideoPlayer({
   const [scrub, setScrub] = useState(null); // seconds while dragging the seek bar
 
   // --- the stream ---------------------------------------------------------
-
-  /**
-   * Where the last stream had got to, and whether it was running.
-   *
-   * Written when a source is torn down and read when the next one is ready, so
-   * that changing source is a change of source rather than a restart from the
-   * beginning with the play button waiting to be pressed.
-   *
-   * A ref rather than state because it is not something the page renders — it is
-   * a hand-off between two effects, and putting it in state would mean a render
-   * between the two with a stale position on screen.
-   */
-  const handedOver = useRef(null);
   const [engine, setEngine] = useState({ engine: 'direct', levels: [], current: -1, auto: true });
 
   // --- subtitles ----------------------------------------------------------
@@ -216,10 +203,6 @@ export default function VideoPlayer({
     setStarted(false);
 
     return () => {
-      // Read before the engine goes, because disposing it takes the position
-      // with it — after this line the element is back at zero and there is
-      // nothing left to hand over.
-      handedOver.current = { at: video.currentTime, playing: !video.paused };
       handle.dispose();
       sourceRef.current = null;
     };
@@ -307,40 +290,19 @@ export default function VideoPlayer({
   // Autoplay and resume. Browsers refuse an unmuted autoplay on a page the
   // visitor has not interacted with, so the attempt is allowed to fail quietly —
   // the large play button is already on screen, which is the right answer.
-  //
-  // Keyed on the source as well as on the props, because changing source is the
-  // other thing that puts a stream at zero. Without that, the effect settled once
-  // on mount and never ran again: a viewer who switched source mid-film got the
-  // opening frame of a film they were twenty minutes into, paused, and had to
-  // find their place again by hand.
-  //
-  // The position that is restored is the one the *previous source* was at, not
-  // `startAt`. `startAt` is where the viewer was when the page opened, so
-  // resuming from it would undo everything they have watched since.
   useEffect(() => {
     if (!video) return undefined;
 
-    const handover = handedOver.current;
-    handedOver.current = null;
-
     const begin = () => {
-      const at = handover?.at ?? startAt;
-      if (at > 0 && video.currentTime < 1) video.currentTime = at;
-      // A source that was playing comes back playing. One that was paused stays
-      // paused — including the first load, where `autoplay` decides and a viewer
-      // who paused before switching does not want it started again for them.
-      if (autoplay || handover?.playing) video.play().catch(() => {});
+      if (startAt > 0 && video.currentTime < 1) video.currentTime = startAt;
+      if (autoplay) video.play().catch(() => {});
     };
 
     video.addEventListener('loadedmetadata', begin, { once: true });
-
-    // Only on a first load. After a switch the element still reports the old
-    // stream's metadata for a moment, and seeking off the back of that would put
-    // the position on a stream that is on its way out.
-    if (!handover && video.readyState >= 1) begin();
+    if (video.readyState >= 1) begin();
 
     return () => video.removeEventListener('loadedmetadata', begin);
-  }, [video, autoplay, startAt, sourceSrc]);
+  }, [video, autoplay, startAt]);
 
   useEffect(() => {
     if (video) video.volume = volume;

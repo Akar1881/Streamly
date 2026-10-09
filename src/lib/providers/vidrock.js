@@ -29,8 +29,6 @@
  * ============================================================================
  */
 
-import { probeStream } from '@/lib/media/probe';
-
 const BASE_URL = 'https://vidrock.net';
 const SUB_BASE_URL = 'https://sub.vdrk.site';
 
@@ -190,45 +188,9 @@ export async function inspectVidrock({ tmdbId, mediaType = 'movie', season = nul
 
     return {
         provider: 'vidrock',
-        streams: await rankStreams(streams, signal),
+        streams,
         subtitles: await fetchSubtitles({ tmdbId, isTv, season, episode, signal }),
     };
-}
-
-/**
- * The streams, measured, best first.
- *
- * This provider needs it more than the others do, and not for the reason the
- * menu implies. Its servers are not alternative routes to the same file — they
- * are different files. On one title the first server was serving 480p while the
- * second had 1080p, and since a stream is only described by its URL, nothing
- * anywhere could tell the difference: the player took the first one, which is
- * the same thing as taking the worst one.
- *
- * So each is asked how big it is (`probe.js`), the ones that refuse the question
- * outright are dropped, and what is left is sorted widest first. What comes back
- * is what `sources[0]` means — the thing that plays — and a resolution for every
- * entry that could be measured, which is what the source menu shows and what the
- * automatic choice between providers is decided on.
- *
- * A server that answers but cannot be measured is kept, at the back. It is not
- * evidence of anything; it is a stream we know no reason to reject.
- */
-async function rankStreams(streams, signal) {
-    const probed = await Promise.all(
-        streams.map(async (stream) => {
-            const { quality } = await probeStream(stream.url, { headers: HEADERS, signal });
-            return { ...stream, quality };
-        }),
-    );
-
-    // Nothing is dropped. A probe that fails is a probe that failed — a host
-    // having a bad minute looks exactly like a host that is gone, and a source
-    // menu that quietly loses entries between one visit and the next is worse
-    // than one that offers a stream which turns out not to work. Unmeasured
-    // streams sort to the back, where they cost nothing: only the first is ever
-    // played without being asked for.
-    return probed.sort((a, b) => (b.quality?.width ?? 0) - (a.quality?.width ?? 0));
 }
 
 /**

@@ -33,17 +33,7 @@ export async function POST(request) {
     // `src/lib/providers/index.js` — and nothing downstream needs it: the
     // switcher numbers these by position. A name that never leaves the server
     // cannot arrive in a viewer's browser by mistake.
-    const playable = streams.map(({ url, type, language, quality }) => ({
-      url,
-      type,
-      language,
-      // Measured server-side, where these hosts can actually be reached, and
-      // carried out because nothing downstream can measure them from a browser:
-      // the segments want a referer a page is not allowed to send. It is the
-      // picture size, and it is the only thing that lets this provider be
-      // compared with the others at all.
-      quality: quality ?? null,
-    }));
+    const playable = streams.map(({ url, type, language }) => ({ url, type, language }));
 
     return Response.json(
       { streams: playable, subtitles },

@@ -267,17 +267,14 @@ export async function resolveBestPlayback({
         signal: controller.signal,
       });
 
-      const source = playback?.sources?.[0];
-
-      // A provider that measured its own stream is believed over the browser's
-      // probe, for two reasons. It did the work where the stream is reachable —
-      // VidRock's hosts want a referer a page cannot send, so a probe from here
-      // would simply come back empty. And it knows which of its streams it is
-      // offering, where this can only see the URL of the one at index 0.
-      const quality =
-        source?.quality ?? (source?.src ? await measureStream(source.src, { signal: controller.signal }) : null);
-
-      return { ...answer, playback, quality, threw: false, gaveUp };
+      const src = playback?.sources?.[0]?.src;
+      return {
+        ...answer,
+        playback,
+        quality: src ? await measureStream(src, { signal: controller.signal }) : null,
+        threw: false,
+        gaveUp,
+      };
     } catch (cause) {
       // A provider that threw is a fault, which is a different sentence to the
       // viewer than "this title is not here" — but an abort is neither, it is

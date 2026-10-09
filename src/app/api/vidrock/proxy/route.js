@@ -40,7 +40,6 @@ import {
   proxyUrl,
   rewritePlaylist,
 } from '@/lib/proxy/stream';
-import { isTransportStream, wrapperLength } from '@/lib/media/transport-stream';
 
 /** The path children are sent back through. Also the route this file serves. */
 const ROUTE_PATH = '/api/vidrock/proxy';
@@ -74,8 +73,65 @@ const UPSTREAM_TIMEOUT_MS = 15_000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 4;
 
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const PNG_SIGNATURE_BYTES = PNG_SIGNATURE.length;
+
+/**
+ * Bytes between the last letter of `IEND` and the first byte of video.
+ *
+ * The image ends with an `IEND` chunk, and a chunk is a four-byte length, the
+ * four letters, then a four-byte CRC. `IEND` is the one chunk that always has a
+ * zero length, so the marker is followed by exactly its CRC and then the video.
+ * Checked against a whole segment rather than reasoned about: with this offset
+ * the MPEG-TS sync bytes land on the 188-byte grid 12130 times out of 12130, and
+ * a byte out in either direction would show up immediately as noise.
+ */
+const PNG_TRAILER_BYTES = 8;
+
+/** MPEG-TS: one sync byte then 187 bytes of payload, over and over. */
+const TS_PACKET_BYTES = 188;
+const TS_SYNC_BYTE = 0x47;
+
 /** How much of a body to look at before deciding what it is. */
 const SNIFF_BYTES = 512;
+
+/**
+ * How long the wrapper is, or 0 if there is no wrapper.
+ *
+ * The signature alone is not enough to go on. A PNG is a plausible thing for a
+ * misconfigured host to actually serve, and cutting seventy bytes out of a real
+ * image would turn a broken stream into a differently broken one. So the `IEND`
+ * chunk has to be there too, and the video starts after it.
+ */
+function wrapperLength(bytes) {
+  if (bytes.length < PNG_SIGNATURE_BYTES + PNG_TRAILER_BYTES) return 0;
+  for (let i = 0; i < PNG_SIGNATURE_BYTES; i += 1) {
+    if (bytes[i] !== PNG_SIGNATURE[i]) return 0;
+  }
+
+  // `Buffer` rather than a hand-written scan: this runs once per segment, the
+  // marker is four bytes, and the platform's own search is the fastest way to
+  // find it.
+  const end = bytes.indexOf('IEND', PNG_SIGNATURE_BYTES);
+  if (end < 0) return 0;
+
+  return end + PNG_TRAILER_BYTES;
+}
+
+/**
+ * Whether these bytes are an MPEG-TS stream.
+ *
+ * One `0x47` is not evidence — that is a letter in a text file, and it is one
+ * byte in every 256 of anything random. Two, exactly one packet apart, is. Both
+ * hosts here label these segments `image/png`, so this is what the response ends
+ * up being served as, and a player that is told the wrong type refuses a stream
+ * it could have played.
+ */
+function isTransportStream(bytes) {
+  if (bytes.length === 0 || bytes[0] !== TS_SYNC_BYTE) return false;
+  if (bytes.length <= TS_PACKET_BYTES) return true;
+  return bytes[TS_PACKET_BYTES] === TS_SYNC_BYTE;
+}
 
 /** The first few hundred bytes of a body, and the reader holding the rest. */
 async function primeBody(stream, size) {

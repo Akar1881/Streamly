@@ -68,12 +68,11 @@ export default {
      * Only the first source is attached when playback starts, so index 0 is what
      * decides whether this provider plays at all — and the dead server is not
      * necessarily last. `inspectVidrock` drops the ones whose token will not
-     * open, and now also the ones whose host will not serve a playlist, but a
-     * server can pass both of those and still fail later — so `Vega 1` failing
-     * over to `Vega 2` is still one click.
-     *
-     * The order is the server's, and it is by picture size descending. That is
-     * what makes the first entry the one worth playing; see `rankStreams`.
+     * open, which is not the same thing as dropping the ones that will not
+     * answer: a server can decode cleanly and still refuse every byte. Nothing
+     * here reorders, because nothing here knows which is which; the source menu
+     * is where a viewer finds out, and `Vega 1` failing over to `Vega 2` is one
+     * click.
      */
     return {
       sources: streams
@@ -82,11 +81,6 @@ export default {
           src: proxiedStreamUrl(stream.url),
           type: mimeType(stream),
           label: `${CODENAME} ${index + 1}`,
-          // What the server measured this stream at, when it could, and the
-          // reason the first entry is the one that plays: the servers here are
-          // not alternative routes to one file, they are different files, and
-          // they arrive in the order the provider happens to list them.
-          quality: stream.quality ?? null,
         })),
 
       /**

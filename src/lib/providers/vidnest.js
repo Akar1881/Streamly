@@ -218,7 +218,6 @@ function parseServerResponse(serverName, data) {
             }
             if (data.data?.stream?.captions && Array.isArray(data.data.stream.captions)) {
                 data.data.stream.captions.forEach(c => subtitles.push({
-                    server: serverName,
                     url: c.url,
                     lang: c.language,
                     format: c.url.includes('.srt') ? 'srt' : 'vtt'
@@ -231,7 +230,6 @@ function parseServerResponse(serverName, data) {
             }
             if (data.subtitles && Array.isArray(data.subtitles)) {
                 data.subtitles.forEach(sub => subtitles.push({
-                    server: serverName,
                     url: sub.url,
                     lang: sub.lang,
                     format: sub.url.includes('.srt') ? 'srt' : 'vtt'

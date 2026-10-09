@@ -79,28 +79,9 @@ export default {
       tracks: (Array.isArray(subtitles) ? subtitles : [])
         .filter((track) => typeof track?.url === 'string' && track.url.length > 0)
         .map((track) => ({
-          src: subtitleSource(track.url),
+          src: track.url,
           label: track.lang ?? 'Unknown',
         })),
     };
   },
 };
-
-/**
- * One upstream's subtitle link, as something the browser can actually fetch.
- *
- * One server hands back `/sub/<base64>` — a path relative to its own fetch
- * endpoint, carrying the target URL and the `Referer` that target demands. The
- * browser resolves it against *this* origin, where nothing lives, so every one
- * of those tracks was a 404; and it could not fetch the target directly anyway,
- * because the header it needs is one a page is not allowed to send. So it goes
- * through `/api/vidnest/subtitle`, which opens the payload and does both on the
- * server. See that route for the rest.
- *
- * Everything else — the servers that return a plain absolute URL — is handed on
- * untouched.
- */
-function subtitleSource(url) {
-  if (!url.startsWith('/sub/')) return url;
-  return `/api/vidnest/subtitle?p=${encodeURIComponent(url.slice('/sub/'.length))}`;
-}

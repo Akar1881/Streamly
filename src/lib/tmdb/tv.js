@@ -13,7 +13,7 @@ export async function getShow(id) {
   const data = await tmdbFetch(`tv/${id}`, {
     params: {
       append_to_response:
-        'credits,aggregate_credits,videos,images,reviews,recommendations,content_ratings',
+        'credits,aggregate_credits,videos,images,reviews,recommendations,content_ratings,external_ids',
       include_image_language: `${site.tmdb.language.split('-')[0]},null`,
     },
     revalidate: site.tmdb.revalidate.detail,
@@ -24,6 +24,15 @@ export async function getShow(id) {
     mediaType: 'tv',
     title: data.name,
     originalTitle: data.original_name,
+    /**
+     * The show's IMDb id, asked for alongside the rest of the detail data.
+     *
+     * TMDB does not put it on the show itself, and it is not needed to play
+     * anything — the providers are keyed on the TMDB id. It is here for the
+     * segment lookup, which is keyed on an IMDb id and has no other way to
+     * reach one; a show TMDB has no id for simply has no skip buttons.
+     */
+    imdbId: data.external_ids?.imdb_id ?? null,
     tagline: data.tagline || '',
     overview: data.overview || '',
     posterPath: data.poster_path,

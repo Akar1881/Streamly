@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getNextEpisode, getSeason, getShow } from '@/lib/tmdb/tv';
+import { getSegments } from '@/lib/introdb';
 import { stillUrl } from '@/lib/images';
 import { daysUntil, formatDate, formatRuntime, joinMeta, parseId, toSlugId } from '@/lib/format';
 import PlayerStage from '@/components/player/PlayerStage';
@@ -79,6 +80,19 @@ export default async function WatchEpisodePage({ params }) {
       }
     : null;
 
+  // The intro, recap and outro ranges for this episode, if the community has
+  // them. Independent of everything above — a title with no segments simply
+  // plays without the skip buttons and the marks on the seek bar, which is the
+  // state most of the catalogue is in. Resolved on the server because the
+  // service refuses a browser origin; see `src/lib/introdb.js`.
+  const segments = unaired
+    ? null
+    : await getSegments({
+        imdbId: show.imdbId,
+        season: seasonNumber,
+        episode: episodeNumber,
+      });
+
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       <Link
@@ -98,7 +112,13 @@ export default async function WatchEpisodePage({ params }) {
           participle="aired"
         />
       ) : (
-        <PlayerStage media={show} season={seasonNumber} episode={episodeNumber} next={nextUp} />
+        <PlayerStage
+          media={show}
+          season={seasonNumber}
+          episode={episodeNumber}
+          next={nextUp}
+          segments={segments}
+        />
       )}
 
       <header className="mt-6">

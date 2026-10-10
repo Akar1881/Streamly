@@ -12,9 +12,11 @@ import SubtitleSettingsPanel from '@/components/player/SubtitleSettingsPanel';
 import SubtitleOverlay from '@/components/player/SubtitleOverlay';
 import ProviderMenu from '@/components/player/ProviderMenu';
 import NextEpisodeCard from '@/components/player/NextEpisodeCard';
+import SkipSegmentButton from '@/components/player/SkipSegmentButton';
 import { useTouchGestures } from '@/components/player/useTouchGestures';
 import { attachSource } from '@/lib/player/source';
 import { parseTrack } from '@/lib/player/cues';
+import { segmentAt } from '@/lib/player/segments';
 import { defaultSettings, loadSettings, resetSettings, saveSettings } from '@/lib/player/settings';
 import { clamp } from '@/lib/player/time';
 
@@ -144,6 +146,11 @@ function unlockOrientation() {
  *        the episode after this one, offered over the picture once the current
  *        one is nearly over. Absent for a film, and for the last episode of a
  *        show — in both cases there is nothing to offer and no card is drawn.
+ * @param {{[type: string]: {start: number, end: number}|null}} [props.segments]
+ *        the recap, intro and outro this title has been timed for — each a pair
+ *        of seconds from the start, or null. The player offers to skip whichever
+ *        one the playhead is inside, and shows the lot on the seek bar. Absent
+ *        when nothing has been timed, which most titles are.
  */
 export default function VideoPlayer({
   sources = [],
@@ -160,6 +167,7 @@ export default function VideoPlayer({
   qualities = {},
   onSelectProvider,
   nextEpisode = null,
+  segments = null,
 }) {
   const containerRef = useRef(null);
   const sourceRef = useRef(null); // the live engine handle
@@ -812,6 +820,27 @@ export default function VideoPlayer({
     duration > 0 &&
     time / duration >= NEXT_AT;
 
+  /**
+   * The timed range the playhead is inside, if any — the one the skip button is
+   * offering. `null` covers both "this title was never timed" and "we are
+   * between ranges", which need no telling apart here.
+   */
+  const activeSegment = segmentAt(segments, time);
+
+  /**
+   * Past the range being offered.
+   *
+   * An absolute move rather than a nudge, because the whole point of a skip
+   * button is that the viewer does not have to know how long the thing lasts.
+   * It goes through `seek`, the same door as the arrow keys and the bar, so a
+   * skip is not a fourth way of moving the playhead that can drift from the
+   * other three.
+   */
+  function skipSegment() {
+    const range = activeSegment ? segments?.[activeSegment] : null;
+    if (range) seek(range.end, true);
+  }
+
   const qualityLabel = useMemo(() => {
     if (!engine.levels.length) return 'Auto';
     if (engine.auto) return 'Auto';
@@ -1064,12 +1093,27 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {offerNext && (
-        <NextEpisodeCard
-          {...nextEpisode}
-          raised={visible}
-          onDismiss={() => setNextDismissed(true)}
-        />
+      {(offerNext || activeSegment) && (
+        // The two offers share the corner because they are the same kind of
+        // thing — a way out of the part of the episode being watched — and the
+        // skip button is the nearer of the two to the bottom, where a thumb
+        // already is. Only the player knows whether both are on screen, so only
+        // the player can lay them out.
+        //
+        // `bottom` is animated rather than fixed, because the bar hides itself
+        // after a few idle seconds and the stack must not be left floating a
+        // bar's height above nothing. It drops into the corner as the bar goes.
+        <div
+          className={`pointer-events-none absolute inset-x-0 z-30 flex flex-col items-end gap-2
+            px-3 transition-[bottom] duration-200 sm:px-4
+            ${visible ? 'bottom-[4.5rem] sm:bottom-[4.75rem]' : 'bottom-3 sm:bottom-4'}`}
+        >
+          {activeSegment && <SkipSegmentButton type={activeSegment} onSkip={skipSegment} />}
+
+          {offerNext && (
+            <NextEpisodeCard {...nextEpisode} onDismiss={() => setNextDismissed(true)} />
+          )}
+        </div>
       )}
 
       <PlayerCenterControls
@@ -1104,6 +1148,7 @@ export default function VideoPlayer({
         onToggleFullscreen={toggleFullscreen}
         visible={visible}
         onHover={setHoveringBar}
+        segments={segments}
       />
 
       {menu === 'sources' && (

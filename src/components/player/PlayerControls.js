@@ -1,8 +1,10 @@
 'use client';
 
+import { useMemo } from 'react';
 import Icon from '@/components/ui/Icon';
 import Slider from '@/components/player/Slider';
 import { formatClock } from '@/lib/player/time';
+import { segmentMarks } from '@/lib/player/segments';
 
 /**
  * ============================================================================
@@ -64,6 +66,8 @@ export function volumeIcon(muted, volume) {
  * @param {(hovering: boolean) => void} [props.onHover]
  *        whether the pointer is on the bar, so the player knows not to hide the
  *        controls out from under it
+ * @param {{[type: string]: {start: number, end: number}|null}} [props.segments]
+ *        the skippable ranges, drawn as bands on the seek bar
  */
 export default function PlayerControls({
   playing,
@@ -89,11 +93,20 @@ export default function PlayerControls({
   onToggleFullscreen,
   visible,
   onHover,
+  segments,
 }) {
   // `duration` is NaN until the browser has read the metadata, and Infinity for
   // a live stream. Both would render as a broken bar, so both read as zero here
   // and the seek bar simply has nothing to show until there is a real duration.
   const total = Number.isFinite(duration) && duration > 0 ? duration : 0;
+
+  /**
+   * Where the intro, recap and outro fall on the bar.
+   *
+   * Empty until the duration is known, which is also when the bar itself has
+   * nothing to show — the two arrive together on `loadedmetadata`.
+   */
+  const marks = useMemo(() => segmentMarks(segments, total), [segments, total]);
 
   // On a phone the bar is about 340px wide and the three text buttons alone
   // want more than that, which pushed the fullscreen button off the right edge.
@@ -160,6 +173,23 @@ export default function PlayerControls({
           className="absolute inset-y-0 left-0 h-full rounded-full bg-white/20"
           style={{ width: total ? `${Math.min(buffered / total, 1) * 100}%` : '0%' }}
         />
+
+        {/* The skippable ranges, over the buffered bar and under the fill.
+            They are drawn here rather than given to the slider because the
+            slider does not know there is such a thing as an intro — it draws a
+            value, and this is a layer of meaning on top of one.
+
+            Over the buffered bar so the band keeps its colour where the two
+            overlap, and under the fill so a range the viewer has already passed
+            is covered by the played part and stops asking to be skipped, which
+            is what it is for. */}
+        {marks.map((mark) => (
+          <div
+            key={mark.type}
+            className="absolute inset-y-0 bg-segment/70"
+            style={{ left: mark.left, width: mark.width }}
+          />
+        ))}
       </Slider>
 
       <div className="mt-1 flex items-center gap-0.5">

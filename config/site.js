@@ -121,6 +121,16 @@ const site = {
         accent: '#ffffff', //  primary buttons, active states
         accentText: '#0a0a0a', //  text sitting on top of `accent`
         star: '#f5b50a', //  rating stars
+        /**
+         * The intro / recap / outro ranges drawn on the player's seek bar.
+         *
+         * One value in both palettes on purpose: the player is a dark surface
+         * whatever the page is doing, so a light-theme variant would never be
+         * seen. It is a token rather than a class in the component so that the
+         * one colour in the player that is not black or white is still a line
+         * of config.
+         */
+        segment: '#38bdf8',
       },
       light: {
         bg: '#ffffff',
@@ -133,6 +143,8 @@ const site = {
         accent: '#0a0a0a',
         accentText: '#ffffff',
         star: '#d99e00',
+        /** See the note on the dark palette's `segment`. */
+        segment: '#38bdf8',
       },
     },
 
@@ -366,6 +378,30 @@ const site = {
     autoplay: true,
     /** Offer a "Next episode" button on TV playback pages. */
     episodeNav: true,
+
+    /**
+     * Skip Intro / Recap / Outro, and the ranges drawn on the seek bar for them.
+     *
+     * The times come from introdb.app, a public community database of them —
+     * `GET api.introdb.app/segments?imdb_id=…`. It is keyed on an IMDb id, which
+     * for a film TMDB hands over directly and for a show has to be asked for
+     * separately; see `src/lib/tmdb/tv.js`. Nothing is played back through it,
+     * so a title it has never heard of simply has no buttons.
+     *
+     * `api` is read on the server only. The service reflects its own origin in
+     * `Access-Control-Allow-Origin`, so a browser cannot read it directly and
+     * every request goes out from a Server Component — which also means the
+     * lookup is cached with the page and costs nothing per visitor.
+     *
+     * `revalidate` is longer than a page's own: these timestamps are editorial
+     * facts about a finished episode, and the community corrects them over days,
+     * not minutes. A day is a generous window to notice.
+     */
+    skip: {
+      enabled: true,
+      api: 'https://api.introdb.app',
+      revalidate: 86400,
+    },
     /** Remember where the viewer left off (stored in their browser only). */
     saveProgress: true,
 

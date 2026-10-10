@@ -129,8 +129,13 @@ function ChannelLink() {
  *                                   player offers near the end — `{ href, code,
  *                                   title, still }`, resolved by the watch page.
  *                                   Absent for movies and for a show's finale.
+ * @param {object} [props.segments]  the skippable intro, recap and outro ranges
+ *                                   for this title — `{ recap, intro, outro }`,
+ *                                   each `{ start, end }` in seconds or null.
+ *                                   Absent when the community has not timed the
+ *                                   title, which is the common case.
  */
-export default function PlayerStage({ media, season, episode, next }) {
+export default function PlayerStage({ media, season, episode, next, segments }) {
   const providers = useMemo(() => listProviders(), []);
 
   /**
@@ -553,6 +558,7 @@ export default function PlayerStage({ media, season, episode, next }) {
           qualities={qualities}
           onSelectProvider={chooseProvider}
           nextEpisode={next}
+          segments={segments}
         />
       ) : (
         <NoSource title={unavailable.title} body={unavailable.body}>

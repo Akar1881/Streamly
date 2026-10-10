@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getMovie } from '@/lib/tmdb/movies';
+import { getSegments } from '@/lib/introdb';
 import { daysUntil, formatRuntime, joinMeta, parseId, toSlugId, year } from '@/lib/format';
 import PlayerStage from '@/components/player/PlayerStage';
 import ReleaseNotice from '@/components/media/ReleaseNotice';
@@ -45,6 +46,11 @@ export default async function WatchMoviePage({ params }) {
   const days = daysUntil(movie.releaseDate);
   const unreleased = days === null ? Boolean(movie.status) && movie.status !== 'Released' : days > 0;
 
+  // A film's intro and outro, if the community has timed them. A film has no
+  // recap — it is a show's device — so the player will only ever offer two of
+  // its three buttons here. See `src/lib/introdb.js`.
+  const segments = unreleased ? null : await getSegments({ imdbId: movie.imdbId, isMovie: true });
+
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       <Link
@@ -59,7 +65,7 @@ export default async function WatchMoviePage({ params }) {
       {unreleased ? (
         <ReleaseNotice title={movie.title} date={movie.releaseDate} />
       ) : (
-        <PlayerStage media={movie} />
+        <PlayerStage media={movie} segments={segments} />
       )}
 
       <header className="mt-6">

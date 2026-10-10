@@ -20,6 +20,7 @@
   --color-accent: var(--accent);
   --color-accent-text: var(--accent-text);
   --color-star: var(--star);
+  --color-segment: var(--segment);
 
   --radius-card: var(--radius-card);
   --radius-button: var(--radius-button);

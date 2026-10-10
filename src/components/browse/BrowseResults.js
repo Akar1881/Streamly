@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import site from '@config/site';
-import { buildDiscoverParams } from '@/lib/tmdb/filters';
+import { buildDiscoverParams, countActiveFilters } from '@/lib/tmdb/filters';
 import { fetchTmdb } from '@/lib/tmdb/browser';
 import { normaliseMedia } from '@/lib/tmdb/normalise';
 import MediaGrid from '@/components/media/MediaGrid';
@@ -22,7 +22,7 @@ import Icon from '@/components/ui/Icon';
  *  been seen already.
  * ============================================================================
  */
-export default function BrowseResults({ mediaType, initialItems, initialTotalPages }) {
+export default function BrowseResults({ mediaType, filters = {}, initialItems, initialTotalPages }) {
   const [items, setItems] = useState(initialItems);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(initialTotalPages);
@@ -46,7 +46,7 @@ export default function BrowseResults({ mediaType, initialItems, initialTotalPag
 
     try {
       const data = await fetchTmdb(`discover/${mediaType}`, {
-        ...buildDiscoverParams(mediaType, {}),
+        ...buildDiscoverParams(mediaType, filters),
         page: nextPage,
         language: site.tmdb.language,
         include_adult: site.tmdb.includeAdult,
@@ -69,7 +69,7 @@ export default function BrowseResults({ mediaType, initialItems, initialTotalPag
     } finally {
       setLoading(false);
     }
-  }, [loading, page, totalPages, mediaType]);
+  }, [loading, page, totalPages, mediaType, filters]);
 
   /** Infinite scroll via a sentinel at the end of the grid. */
   const sentinelRef = useRef(null);
@@ -92,11 +92,17 @@ export default function BrowseResults({ mediaType, initialItems, initialTotalPag
   }, [loadMore]);
 
   if (items.length === 0) {
+    const filtered = countActiveFilters(filters) > 0;
+
     return (
       <EmptyState
         icon="search"
-        title="Nothing to show yet"
-        description="TMDB returned no titles for this page. Try reloading in a moment."
+        title={filtered ? 'No titles match these filters' : 'Nothing to show yet'}
+        description={
+          filtered
+            ? 'Try widening the year or rating range, or clearing a filter or two.'
+            : 'TMDB returned no titles for this page. Try reloading in a moment.'
+        }
       />
     );
   }

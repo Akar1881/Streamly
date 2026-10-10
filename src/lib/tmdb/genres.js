@@ -37,6 +37,18 @@ export async function getLanguages() {
 }
 
 /**
+ * Countries TMDB knows about, sorted by English name.
+ * Shape: [{ value: 'US', label: 'United States of America' }]
+ */
+export async function getCountries() {
+  const data = await tmdbFetchSafe('configuration/countries', { revalidate: DAY }, []);
+  return (data ?? [])
+    .filter((country) => country.english_name)
+    .map((country) => ({ value: country.iso_3166_1, label: country.english_name }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
  * Production companies and TV networks have no "list all" endpoint, so these
  * are searched on demand as the user types in the filter.
  */

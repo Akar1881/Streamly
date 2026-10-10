@@ -9,6 +9,6 @@ export const metadata = {
   alternates: { canonical: '/tv' },
 };
 
-export default function TvPage() {
-  return <BrowsePage mediaType="tv" />;
+export default function TvPage({ searchParams }) {
+  return <BrowsePage mediaType="tv" searchParams={searchParams} />;
 }

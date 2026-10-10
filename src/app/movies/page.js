@@ -10,6 +10,6 @@ export const metadata = {
   alternates: { canonical: '/movies' },
 };
 
-export default function MoviesPage() {
-  return <BrowsePage mediaType="movie" />;
+export default function MoviesPage({ searchParams }) {
+  return <BrowsePage mediaType="movie" searchParams={searchParams} />;
 }

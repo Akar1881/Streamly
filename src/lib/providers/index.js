@@ -78,6 +78,16 @@
  *             forbidden list, so `Authorization` and custom `X-…` headers work
  *             and `Referer` / `Origin` / `User-Agent` are dropped no matter
  *             what is passed. See `headerConfig` in `src/lib/player/source.js`.
+ *
+ *             `width` and `height` are optional, and are for a provider that
+ *             knows its picture without being asked — one serving progressive
+ *             MP4, say, where there is no manifest to read a resolution out of.
+ *             They are consulted only when the manifest probe came back empty,
+ *             so they can never override a measured stream; what they can do is
+ *             let a declared resolution win a comparison it should have won and
+ *             would otherwise have lost as zero. A provider that declares a
+ *             resolution it does not have is therefore a way to be wrong here,
+ *             and the only defence is that these are ours to write.
  *    tracks   optional subtitle files for the captions menu.
  *             `{ src, label, lang?, default? }`. `default: true` is the one the
  *             player switches on by itself.
@@ -94,6 +104,7 @@
 import site from '@config/site';
 import videasy from './videasy-provider';
 import vidnest from './vidnest-provider';
+import beenama from './beenama-provider';
 import { measureStream } from './quality';
 
 /**
@@ -103,7 +114,7 @@ import { measureStream } from './quality';
  * listed in `config/site.js` with no module here is skipped rather than
  * crashing the watch page, so a typo costs a switcher entry, not the site.
  */
-const PROVIDERS = { videasy, vidnest };
+const PROVIDERS = { videasy, vidnest, beenama };
 
 /**
  * What to call a provider that has no `label`.
@@ -208,6 +219,32 @@ export async function resolvePlayback({
 const COMPARE_TIMEOUT_MS = 5_000;
 
 /**
+ * A source's resolution, when the provider stated it instead of a manifest.
+ *
+ * Only a provider serving progressive files needs this. With nothing to probe,
+ * `measureStream` answers null for every one of its streams — correctly, since
+ * it measures HLS and says so — and a null measurement compares as zero against
+ * everything, so such a provider would lose to any HLS stream at all, including
+ * ones it is better than.
+ *
+ * The shape is deliberately the one `measureStream` returns, label included, so
+ * that a stated resolution and a measured one are the same thing to everything
+ * downstream: the switcher shows the label beside the provider's codename either
+ * way, and nothing has to know which of the two it was given.
+ *
+ * Anything that is not two positive numbers is not a statement, so it is
+ * `null` — the same "we could not tell" the probe gives, rather than a default
+ * that would quietly rank a provider on a number nobody supplied.
+ */
+function declaredQuality(source) {
+  const width = Number(source?.width);
+  const height = Number(source?.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+
+  return { width, height, label: `${height}p` };
+}
+
+/**
  * Asks every configured provider, and says which of them answered best.
  *
  * This is the difference between "the first source in the config file" and "the
@@ -228,7 +265,8 @@ const COMPARE_TIMEOUT_MS = 5_000;
  *
  * Only the first source of each provider is measured, because only the first is
  * ever attached — measuring the rest would be work spent on something no viewer
- * can reach.
+ * can reach. A provider that states its resolution rather than having one read
+ * from a manifest is read from that same first source, for that same reason.
  *
  * @returns {Promise<{chosen: object|null, answers: object[]}>}
  *          `chosen` is one answer, or null when nobody had this title.
@@ -267,11 +305,13 @@ export async function resolveBestPlayback({
         signal: controller.signal,
       });
 
-      const src = playback?.sources?.[0]?.src;
+      const first = playback?.sources?.[0];
       return {
         ...answer,
         playback,
-        quality: src ? await measureStream(src, { signal: controller.signal }) : null,
+        quality:
+          (first?.src ? await measureStream(first.src, { signal: controller.signal }) : null) ??
+          declaredQuality(first),
         threw: false,
         gaveUp,
       };

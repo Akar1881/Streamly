@@ -48,7 +48,7 @@ export default function SubtitleOverlay({ video, cues, delay = 0, settings }) {
     }
 
     const read = () => {
-      const next = cueAt(cues, video.currentTime + delay);
+      const next = cueAt(cues, video.currentTime - delay);
       // `cueAt` hands back the same object for the same cue, so identity is a
       // valid "did this change" test and no render happens between cues.
       setCue((previous) => (previous === next ? previous : next));

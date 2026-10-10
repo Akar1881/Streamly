@@ -10,12 +10,15 @@ import AudioMenu from '@/components/player/AudioMenu';
 import QualityMenu from '@/components/player/QualityMenu';
 import SpeedMenu from '@/components/player/SpeedMenu';
 import SubtitleSettingsPanel from '@/components/player/SubtitleSettingsPanel';
+import SyncToAudioPanel from '@/components/player/SyncToAudioPanel';
 import SubtitleOverlay from '@/components/player/SubtitleOverlay';
 import ProviderMenu from '@/components/player/ProviderMenu';
 import NextEpisodeCard from '@/components/player/NextEpisodeCard';
 import SkipSegmentButton from '@/components/player/SkipSegmentButton';
 import NowPlayingInfo from '@/components/player/NowPlayingInfo';
 import { useTouchGestures } from '@/components/player/useTouchGestures';
+import useAudioSync from '@/components/player/useAudioSync';
+import { hasGraph, setOutput } from '@/lib/player/audio-graph';
 import { attachSource } from '@/lib/player/source';
 import { parseTrack } from '@/lib/player/cues';
 import { segmentAt } from '@/lib/player/segments';
@@ -233,7 +236,7 @@ export default function VideoPlayer({
 
   // --- the chrome ---------------------------------------------------------
   const [visible, setVisible] = useState(true);
-  const [menu, setMenu] = useState(null); // 'sources' | 'captions' | 'audio' | 'quality' | 'speed' | 'settings'
+  const [menu, setMenu] = useState(null); // 'sources' | 'captions' | 'audio' | 'quality' | 'speed' | 'settings' | 'sync'
   const [hoveringBar, setHoveringBar] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [scrub, setScrub] = useState(null); // seconds while dragging the seek bar
@@ -336,8 +339,18 @@ export default function VideoPlayer({
       setPlaying(!video.paused && !video.ended);
       setTime(video.currentTime);
       setDuration(video.duration);
-      setVolume(video.volume);
-      setMuted(video.muted);
+
+      // The element is the source of truth for these two only while it still
+      // owns them. Once the subtitle sync has tapped the audio it sits pinned
+      // wide open at `volume = 1, muted = false` with the level moved to a gain
+      // node — so reading it back would report full volume and unmuted to a
+      // viewer who chose neither, and would fire on the pinning itself. From
+      // there the state is the truth and this stops asking; every path that
+      // changes either one goes through `setVolume`/`setMuted` anyway.
+      if (!hasGraph(video)) {
+        setVolume(video.volume);
+        setMuted(video.muted);
+      }
       // `rate` is the speed the viewer chose, not whatever the element is doing
       // this instant. A hold sets the element to 2× and fires `ratechange`; if
       // that were copied into state, the Speed menu would read "2×" for the rest
@@ -423,13 +436,16 @@ export default function VideoPlayer({
     return () => video.removeEventListener('loadedmetadata', begin);
   }, [video, autoplay, startAt]);
 
+  // The volume goes through `setOutput` rather than straight at the element
+  // because of the subtitle sync: tapping the audio into a Web Audio graph takes
+  // the element's own `volume` and `muted` away from it, and whether the browser
+  // still honours them afterwards differs between browsers and has differed
+  // between versions of one. With no graph this is the same assignment it always
+  // was; with one, the level moves to a gain node and the element stays pinned
+  // open underneath it. See `audio-graph.js`.
   useEffect(() => {
-    if (video) video.volume = volume;
-  }, [video, volume]);
-
-  useEffect(() => {
-    if (video) video.muted = muted;
-  }, [video, muted]);
+    setOutput(video, { volume, muted });
+  }, [video, volume, muted]);
 
   // Report progress on a throttle. The page decides what to do with it; this
   // only guarantees it is not called on every `timeupdate`. The duration goes
@@ -684,6 +700,12 @@ export default function VideoPlayer({
     onHoldStart: holdStart,
     onHoldEnd: holdEnd,
   });
+
+  // Lives here rather than in the panel so a run survives the panel being
+  // closed — the viewer can start it, shut the menu and keep watching while the
+  // subtitles find their place. `onApply` is the whole of what it does to the
+  // player: the delay the stepper sets, set the same way.
+  const sync = useAudioSync({ video, cues, onApply: setDelay });
 
   /**
    * Everything the picture does in response to a pointer.
@@ -1264,7 +1286,25 @@ export default function VideoPlayer({
           }}
           delay={delay}
           onDelay={setDelay}
+          onSync={() => setMenu('sync')}
+          syncing={sync.status === 'listening'}
           onCustomize={() => setMenu('settings')}
+          onClose={() => setMenu(null)}
+        />
+      )}
+
+      {menu === 'sync' && (
+        <SyncToAudioPanel
+          status={sync.status}
+          seconds={sync.seconds}
+          offset={sync.offset}
+          score={sync.score}
+          onStart={sync.start}
+          onStop={sync.stop}
+          // Only reached while listening: the session is deliberately not tied
+          // to whether this panel is mounted, so a run outlives the menu.
+          onCancel={sync.cancel}
+          onBack={() => setMenu('captions')}
           onClose={() => setMenu(null)}
         />
       )}

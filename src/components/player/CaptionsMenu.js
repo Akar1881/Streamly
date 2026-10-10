@@ -14,6 +14,11 @@ import PlayerMenu, { MenuDivider, MenuNote, MenuRow } from '@/components/player/
  *  slightly wrong, and a viewer reaches for it while watching, not while setting
  *  the site up. It steps in tenths, which is fine enough to fix a bad rip and
  *  coarse enough not to be fiddly.
+ *
+ *  The stepper is also the reason "Sync to audio" sits directly above it. Both
+ *  answer the same question — how far out is this file — and the one that works
+ *  it out from the film is offered first, with the one that works it out from the
+ *  viewer's eye kept underneath for the cases it cannot settle.
  * ============================================================================
  */
 
@@ -30,6 +35,8 @@ const LIMIT = 30;
  * @param {(index: number|null) => void} props.onSelectTrack
  * @param {number} props.delay             seconds, positive means subtitles later
  * @param {(delay: number) => void} props.onDelay
+ * @param {() => void} props.onSync
+ * @param {boolean} props.syncing          whether a sync run is under way
  * @param {() => void} props.onCustomize
  * @param {() => void} props.onClose
  */
@@ -39,6 +46,8 @@ export default function CaptionsMenu({
   onSelectTrack,
   delay,
   onDelay,
+  onSync,
+  syncing = false,
   onCustomize,
   onClose,
 }) {
@@ -62,6 +71,18 @@ export default function CaptionsMenu({
       ))}
 
       {tracks.length === 0 && <MenuNote>No subtitles available for this stream.</MenuNote>}
+
+      {/* Above the divider with the tracks it corrects, and above the stepper
+          that does the same job by hand. The trailing text reports a run that is
+          still going, because a session deliberately outlives this menu being
+          closed and the row is then the only sign of it. */}
+      {tracks.length > 0 && (
+        <MenuRow
+          label="Sync to audio"
+          trailing={syncing ? 'Listening' : 'Automatic'}
+          onClick={onSync}
+        />
+      )}
 
       <MenuDivider />
 

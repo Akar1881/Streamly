@@ -13,6 +13,7 @@ import SubtitleOverlay from '@/components/player/SubtitleOverlay';
 import ProviderMenu from '@/components/player/ProviderMenu';
 import NextEpisodeCard from '@/components/player/NextEpisodeCard';
 import SkipSegmentButton from '@/components/player/SkipSegmentButton';
+import NowPlayingInfo from '@/components/player/NowPlayingInfo';
 import { useTouchGestures } from '@/components/player/useTouchGestures';
 import { attachSource } from '@/lib/player/source';
 import { parseTrack } from '@/lib/player/cues';
@@ -151,6 +152,10 @@ function unlockOrientation() {
  *        of seconds from the start, or null. The player offers to skip whichever
  *        one the playhead is inside, and shows the lot on the seek bar. Absent
  *        when nothing has been timed, which most titles are.
+ * @param {{logo?: string, title?: string, overview?: string}} [props.nowPlaying]
+ *        what the viewer is watching, shown in the bottom-left once the chrome
+ *        has faded. Absent for a caller with nothing to say about its sources —
+ *        which is the test page's case, and the block simply does not appear.
  */
 export default function VideoPlayer({
   sources = [],
@@ -168,6 +173,7 @@ export default function VideoPlayer({
   onSelectProvider,
   nextEpisode = null,
   segments = null,
+  nowPlaying = null,
 }) {
   const containerRef = useRef(null);
   const sourceRef = useRef(null); // the live engine handle
@@ -985,6 +991,27 @@ export default function VideoPlayer({
 
       {cues.length > 0 && (
         <SubtitleOverlay video={video} cues={cues} delay={delay} settings={settings} />
+      )}
+
+      {/* What is playing, once nothing else is. It rides the chrome's own state
+          rather than a timer of its own: `visible` is already false in exactly
+          the case this is for — playing, nobody touching anything — and already
+          held true in every case it is not, since the player pins the chrome up
+          while paused, while a menu is open, while the pointer is on the bar and
+          while it is buffering. A second idea of "idle" would be a second thing
+          to keep in step with the first, and the two would drift.
+
+          `started` because before the first frame there is a poster on screen
+          saying the same thing better, and a logo over a poster of the same
+          title reads as a mistake.
+
+          Not in fullscreen, where the picture is the whole screen and the
+          viewer asked for exactly that: everything the frame can give it goes
+          to the film, and a title card in the corner is the one thing they did
+          not ask to be reminded of. The chrome still behaves as it always does
+          there — it is only this block that stays out of the way. */}
+      {nowPlaying && started && !fullscreen && (
+        <NowPlayingInfo {...nowPlaying} visible={!visible} />
       )}
 
       {/* The gesture surface: under the chrome, over the picture.

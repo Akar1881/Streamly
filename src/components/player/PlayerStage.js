@@ -6,7 +6,7 @@ import { listProviders, resolveBestPlayback } from '@/lib/providers';
 import { useTranslatedSubtitle } from '@/lib/subtitles/client';
 import { dedupeTracks, pickSourceTrack } from '@/lib/player/tracks';
 import { getProgressEntry, recordProgress } from '@/lib/storage';
-import { backdropUrl, posterUrl } from '@/lib/images';
+import { backdropUrl, logoUrl, posterUrl } from '@/lib/images';
 import Icon from '@/components/ui/Icon';
 import VideoPlayer from '@/components/player/VideoPlayer';
 import SubtitleProgress from '@/components/player/SubtitleProgress';
@@ -534,6 +534,28 @@ export default function PlayerStage({ media, season, episode, next, segments }) 
     posterUrl(media.posterPath) ??
     undefined;
 
+  /**
+   * What the player shows in the corner once the chrome has faded: the title's
+   * own artwork, its name, and a line of what it is about.
+   *
+   * The show's or film's own overview rather than this episode's, because the
+   * block answers "what am I watching" and the answer to that is the title. An
+   * episode synopsis is a plot summary, and reading one over the opening titles
+   * is how a viewer spoils the episode they are three minutes into.
+   *
+   * A plain object rather than a `useMemo`, unlike the lists above it: this
+   * place in the component is *below* the early returns, and a hook down here
+   * would not run on the renders that take one of them — `NoSource` and the
+   * subtitle wait both leave before reaching this line. React counts hooks, and
+   * the count has to match on every render, which is what the ordering error is.
+   * Nothing downstream keys on this identity, so there is nothing to gain.
+   */
+  const nowPlaying = {
+    logo: logoUrl(media.logoPath),
+    title: media.title,
+    overview: media.overview,
+  };
+
   return (
     <div className="space-y-3">
       {resolving ? (
@@ -559,6 +581,7 @@ export default function PlayerStage({ media, season, episode, next, segments }) 
           onSelectProvider={chooseProvider}
           nextEpisode={next}
           segments={segments}
+          nowPlaying={nowPlaying}
         />
       ) : (
         <NoSource title={unavailable.title} body={unavailable.body}>

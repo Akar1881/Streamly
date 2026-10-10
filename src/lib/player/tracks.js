@@ -93,3 +93,69 @@ export function pickSourceTrack(tracks, languageLabel) {
   // impaired file is a worse translation source, not an unusable one.
   return matches.find((track) => !HEARING_IMPAIRED.test(String(track.label))) ?? matches[0];
 }
+
+/* -------------------------------------------------------------------------- */
+/*  WHICH TRACK TURNS ITSELF ON                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The index of the track that names a language, or `-1` for none.
+ *
+ * Matched on the label rather than on a language code, for the same reason
+ * `pickSourceTrack` is: providers name languages the way they please and there
+ * is no code to trust. An exact match wins, and a label that *starts with* the
+ * name is the fallback, so a remembered `English` still finds `English (US)`
+ * and `English2` on a title whose provider spells it differently from the one
+ * the viewer chose on.
+ */
+function labelIndex(tracks, label) {
+  const wanted = String(label ?? '').trim().toLowerCase();
+  if (!wanted) return -1;
+
+  const same = (value) => String(value?.label ?? '').trim().toLowerCase();
+
+  const exact = tracks.findIndex((track) => same(track) === wanted);
+  if (exact >= 0) return exact;
+
+  return tracks.findIndex((track) => same(track).startsWith(wanted));
+}
+
+/**
+ * The track the player turns on by itself, as an index into `tracks`, or `-1`
+ * to leave captions off.
+ *
+ * In order, and the order is the whole of it:
+ *
+ *   1. What the viewer chose last time, if this title offers that language.
+ *      `preference` is `{ label }` for a language and `{ label: null }` for
+ *      captions switched off deliberately — a choice like any other, and the
+ *      one to keep. `null` means they have not chosen yet.
+ *   2. The first of `preferredLabels` the title has — the site's own languages,
+ *      best first.
+ *   3. Whatever the list marks as `default`, which is how a provider or the
+ *      site nominates one.
+ *
+ * Nothing matched is `-1`, not index 0: turning on a subtitle file in a
+ * language nobody asked for is not a default, it is a surprise.
+ *
+ * @param {{label?: string, src?: string, default?: boolean}[]} tracks
+ * @param {{label: string|null}|null} preference  the viewer's stored choice
+ * @param {string[]} [preferredLabels]  the site's languages, best first
+ */
+export function pickSubtitleTrack(tracks, preference, preferredLabels = []) {
+  if (!tracks.length) return -1;
+
+  if (preference) {
+    if (!preference.label) return -1;
+
+    const remembered = labelIndex(tracks, preference.label);
+    if (remembered >= 0) return remembered;
+  }
+
+  for (const label of preferredLabels) {
+    const index = labelIndex(tracks, label);
+    if (index >= 0) return index;
+  }
+
+  return tracks.findIndex((track) => track.default);
+}

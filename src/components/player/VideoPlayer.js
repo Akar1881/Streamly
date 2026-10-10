@@ -20,6 +20,8 @@ import { parseTrack } from '@/lib/player/cues';
 import { segmentAt } from '@/lib/player/segments';
 import { defaultSettings, loadSettings, resetSettings, saveSettings } from '@/lib/player/settings';
 import { clamp } from '@/lib/player/time';
+import { pickSubtitleTrack } from '@/lib/player/tracks';
+import { getSubtitleChoice, setSubtitleChoice } from '@/lib/storage';
 
 /**
  * ============================================================================
@@ -68,6 +70,22 @@ const NEXT_AT = 0.95;
 
 /** What a held pointer multiplies playback by, when "Hold for 2×" is on. */
 const HOLD_RATE = 2;
+
+/**
+ * The languages the player turns on by itself, best first.
+ *
+ * English first, because that is the language the site is in and the one a
+ * viewer who has not chosen yet almost always wants. The translation second, so
+ * that a title whose source subtitle could not be fetched still starts with
+ * something readable rather than with captions off.
+ *
+ * Only a fallback ordering: what the viewer chose last comes before both, and
+ * is looked up per title; see `pickSubtitleTrack`.
+ */
+const DEFAULT_TRACK_LABELS = [
+  site.subtitles.sourceLanguageLabel ?? site.subtitles.sourceLanguage,
+  site.subtitles.target.label,
+].filter(Boolean);
 
 /**
  * How long a press must last before it counts as a hold.
@@ -422,19 +440,40 @@ export default function VideoPlayer({
     setSettings(loadSettings());
   }, []);
 
-  // A track marked `default` turns itself on. That is how the translated
-  // subtitle arrives already showing rather than waiting to be found in the
-  // captions menu — but the list it has to be found in is not there yet when
-  // the player mounts, because the translation lands a moment later, so the
-  // list goes from empty to one and this has to survive that.
+  // The track to turn on before the viewer has said anything: the language they
+  // chose last time, then English, then the site's translation. Which of those
+  // it is is `pickSubtitleTrack`'s business; this only has to re-run when the
+  // list changes, because the list does change underneath it — the translated
+  // track lands a moment after the player mounts, and a title whose provider
+  // brings its own subtitles gains several more at once.
   //
   // Once the viewer has picked a track or turned captions off, that choice is
-  // kept: a default track appearing afterwards must not switch them back on.
+  // kept for the session: a preferred track appearing afterwards must not
+  // switch them back.
   useEffect(() => {
     if (trackChosen.current || !tracks.length) return;
-    const preferred = tracks.findIndex((track) => track.default);
+
+    const preferred = pickSubtitleTrack(tracks, getSubtitleChoice(), DEFAULT_TRACK_LABELS);
     if (preferred >= 0) setActiveTrack(preferred);
   }, [tracks]);
+
+  /**
+   * Turns a track on, and remembers it for the next title.
+   *
+   * The only place a choice is recorded, so the menu, the `c` shortcut and
+   * anything added later cannot drift apart. `null` is captions off, which is
+   * stored as the choice it is rather than as the absence of one.
+   */
+  const chooseTrack = useCallback(
+    (index) => {
+      trackChosen.current = true;
+      setActiveTrack(index ?? null);
+
+      const off = index === null || index === undefined;
+      setSubtitleChoice(off ? null : (tracks[index]?.label ?? null));
+    },
+    [tracks],
+  );
 
   // Load and parse the chosen track. Parsed once per track, not per cue — the
   // overlay searches the resulting array on every frame instead.
@@ -780,11 +819,11 @@ export default function VideoPlayer({
         break;
       case 'c':
         // Cycle: off, then each track, then off again.
-        trackChosen.current = true;
-        setActiveTrack((current) => {
-          if (current === null) return tracks.length ? 0 : null;
-          return current + 1 < tracks.length ? current + 1 : null;
-        });
+        chooseTrack(
+          activeTrack === null
+            ? (tracks.length ? 0 : null)
+            : (activeTrack + 1 < tracks.length ? activeTrack + 1 : null),
+        );
         break;
       case 'Escape':
         setMenu(null);
@@ -1197,8 +1236,7 @@ export default function VideoPlayer({
           tracks={tracks}
           activeTrack={activeTrack}
           onSelectTrack={(index) => {
-            trackChosen.current = true;
-            setActiveTrack(index);
+            chooseTrack(index);
             setMenu(null);
           }}
           delay={delay}

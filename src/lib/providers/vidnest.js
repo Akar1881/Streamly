@@ -206,6 +206,8 @@ const SERVERS = [
   'flixhq',
  // 'vidzee',
   'onehd',
+  'yflix',
+  'rogflix',
 ];
 
 /**

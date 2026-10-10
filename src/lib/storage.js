@@ -15,6 +15,7 @@ const KEYS = {
   progress: 'streamly:progress',
   theme: 'streamly:theme',
   playerSettings: 'streamly:player',
+  subtitleChoice: 'streamly:subtitles',
 };
 
 /** Lets components re-render when another tab (or component) changes storage. */
@@ -223,6 +224,49 @@ export function setStoredTheme(mode) {
   } catch {
     /* ignore */
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  SUBTITLE CHOICE                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The subtitle language the viewer last picked, so the player can turn it on
+ * again by itself on the next title.
+ *
+ * Two different things are stored as one value, because from the viewer's side
+ * they are one decision: a language, and "off". Turning captions off is not the
+ * absence of a choice — it is a choice, made in the captions menu, and the
+ * player treats it as one; what it is *not* is the fallback the player reaches
+ * for when a preferred language is missing, which is why the two cannot share a
+ * representation here.
+ *
+ * `null` means the viewer has never chosen, which is different from having
+ * chosen "off", and is the state a first visit is in.
+ *
+ * @returns {{label: string|null}|null}
+ */
+export function getSubtitleChoice() {
+  const stored = read(KEYS.subtitleChoice, null);
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return null;
+
+  if (stored.off === true) return { label: null };
+
+  return typeof stored.label === 'string' && stored.label.trim()
+    ? { label: stored.label }
+    : null;
+}
+
+/**
+ * Records the viewer's subtitle language, or `null`/`''` for captions off.
+ *
+ * A language is stored by its label rather than by index: the list is rebuilt
+ * for every title, from whatever that title's provider and translation offer,
+ * and an index into one title's list means nothing in another's.
+ */
+export function setSubtitleChoice(label) {
+  const name = typeof label === 'string' && label.trim() ? label.trim() : null;
+  write(KEYS.subtitleChoice, name ? { label: name } : { off: true });
 }
 
 /* -------------------------------------------------------------------------- */

@@ -600,17 +600,22 @@ const site = {
     },
 
     /**
-     * Turn the translated track on as soon as it is ready, without the viewer
-     * having to open the captions menu.
+     * Wait for the translated track before playing, and mark it as the track
+     * the player falls back to.
      *
-     * On a Sorani site this is the point of the translation, so it is on. It
-     * also decides whether the player waits: with it on, a title whose
-     * translation has never been made shows the progress screen while it is
-     * prepared, so the viewer starts the film with subtitles rather than
-     * gaining them mid-scene. With it off nothing is waited for — the player
-     * starts immediately and the track is there to switch on.
+     * Off, which is what it should be on a site whose viewers watch in the
+     * source language: the player turns on English (`sourceLanguageLabel`) by
+     * itself, or whatever language the viewer chose last — it remembers the
+     * choice — and the film starts immediately. The translation is still made
+     * and still appears in the captions menu as soon as it is ready; it is
+     * simply no longer chosen for the viewer, and no longer a wait.
+     *
+     * Turning it on restores the old behaviour: the viewer waits on the
+     * progress screen while the translation is prepared, and the translated
+     * track is marked `default` so the player reaches for it when no preferred
+     * language is on offer.
      */
-    autoSelect: true,
+    autoSelect: false,
 
     /**
      * Where translated files are stored **when object storage is not

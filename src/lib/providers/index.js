@@ -42,7 +42,7 @@
  *  ---------------------------------------------------------------------------
  *
  *  Every name a viewer can read comes from `label`, and it is a word we chose
- *  rather than the name of the service behind it — `Alpha`, `Neon`, `Gamma`.
+ *  rather than the name of the service behind it — `Alpha`, `Neon`, `Delta`.
  *  That is a rule for this directory, not a per-provider decision: source
  *  labels, the provider switcher and anything added later all inherit it from
  *  here, so a new provider written to this contract is pseudonymous by default
@@ -104,7 +104,7 @@
 import site from '@config/site';
 import videasy from './videasy-provider';
 import vidnest from './vidnest-provider';
-import beenama from './beenama-provider';
+import vidrock from './vidrock-provider';
 import { measureStream } from './quality';
 
 /**
@@ -114,7 +114,7 @@ import { measureStream } from './quality';
  * listed in `config/site.js` with no module here is skipped rather than
  * crashing the watch page, so a typo costs a switcher entry, not the site.
  */
-const PROVIDERS = { videasy, vidnest, beenama };
+const PROVIDERS = { videasy, vidnest, vidrock };
 
 /**
  * What to call a provider that has no `label`.

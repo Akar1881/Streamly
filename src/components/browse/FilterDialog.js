@@ -52,14 +52,21 @@ export default function FilterDialog({
         if (event.target === event.currentTarget) onClose();
       }}
     >
+      {/*
+        The card is capped at the viewport height and laid out as a column, so
+        only the middle grows a scrollbar. Without the cap a long panel — the
+        genre grid is nineteen rows on a phone — is taller than the screen, and
+        because the card is centred the top half ends up above the scrollable
+        area where no amount of scrolling can reach it.
+      */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`w-full ${width} rounded-[var(--radius-card)] border border-line
-          bg-surface p-5 shadow-2xl sm:p-6`}
+        className={`flex max-h-[calc(100dvh-2rem)] w-full ${width} flex-col
+          rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-2xl sm:p-6`}
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex shrink-0 items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-text">{title}</h2>
             {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
@@ -76,9 +83,12 @@ export default function FilterDialog({
           </button>
         </div>
 
-        <div className="mt-5">{children}</div>
+        {/* `min-h-0` is what actually lets this shrink: a flex child refuses to
+            go below its content size without it, which is the same overflow by
+            another route. */}
+        <div className="mt-5 min-h-0 flex-1 overflow-y-auto">{children}</div>
 
-        <div className="mt-6 flex items-center justify-between gap-3">
+        <div className="mt-6 flex shrink-0 items-center justify-between gap-3">
           {onClear ? (
             <button
               type="button"

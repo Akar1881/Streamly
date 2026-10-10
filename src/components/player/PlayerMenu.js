@@ -14,6 +14,15 @@ import Icon from '@/components/ui/Icon';
  *  inside the player frame, which is a plain positioned box, so being a child of
  *  it is both simpler and correct — it cannot end up outside the video.
  *
+ *  The panel is capped to the room that is actually left above the control bar,
+ *  and the middle of it is what scrolls. On a phone the player is a 16:9 box
+ *  barely 200px tall, and the bar claims the bottom of it — a menu laid out at
+ *  its natural height is taller than what is left, and because the frame clips
+ *  its children the top of it used to disappear off the top of the picture.
+ *  Header and footer are pinned, so the title and the action always stay in
+ *  view; on a desktop the cap is far above any menu's real height and does
+ *  nothing.
+ *
  *  The colours are deliberately hard-coded black and white rather than the
  *  theme's `--card` and `--text`. This panel is always over video, and the light
  *  theme's near-white surfaces would read as a hole punched in the picture. The
@@ -27,11 +36,12 @@ export default function PlayerMenu({ title, onBack, onClose, children, footer, w
     <div
       role="dialog"
       aria-label={title}
-      className={`absolute bottom-[4.75rem] right-2 z-30 max-w-[calc(100%-1rem)] overflow-hidden
+      className={`absolute bottom-[4.75rem] right-2 z-30 flex max-h-[calc(100%-5.25rem)]
+        max-w-[calc(100%-1rem)] flex-col overflow-hidden
         rounded-[var(--radius-card)] border border-white/10 bg-black/90 text-white shadow-2xl
         backdrop-blur-md sm:right-3 ${wide ? 'w-[21rem]' : 'w-[17.5rem]'}`}
     >
-      <header className="flex items-center gap-1 px-2 py-2.5">
+      <header className="flex shrink-0 items-center gap-1 px-2 py-2.5">
         {onBack && (
           <button
             type="button"
@@ -57,11 +67,13 @@ export default function PlayerMenu({ title, onBack, onClose, children, footer, w
         </button>
       </header>
 
-      <div className="max-h-[min(60vh,22rem)] overflow-y-auto overscroll-contain border-t border-white/10 py-1">
+      {/* `min-h-0` is what lets this give way: a flex child will not shrink below
+          its content without it, which would push the header off the top again. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-white/10 py-1">
         {children}
       </div>
 
-      {footer}
+      {footer && <div className="shrink-0">{footer}</div>}
     </div>
   );
 }

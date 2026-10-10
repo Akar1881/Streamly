@@ -34,10 +34,11 @@ function reading(offset) {
 function Badge({ live }) {
   return (
     <span
-      className={`grid size-11 place-items-center rounded-full border transition-colors
+      className={`grid size-9 place-items-center rounded-full border transition-colors
+        sm:size-11
         ${live ? 'border-white/40 bg-white/10 text-white' : 'border-white/15 bg-white/5 text-white/70'}`}
     >
-      <Icon name="audio-waveform" size={19} />
+      <Icon name="audio-waveform" size={18} />
     </span>
   );
 }
@@ -99,12 +100,13 @@ export default function SyncToAudioPanel({
       onBack={onBack}
       onClose={onClose}
       footer={
-        <div className="border-t border-white/10 p-2">
+        <div className="border-t border-white/10 p-1.5 sm:p-2">
           <button
             type="button"
             disabled={unsupported}
             onClick={listening ? onStop : onStart}
-            className={`h-10 w-full rounded-[var(--radius-button)] text-sm font-medium transition-colors
+            className={`h-9 w-full rounded-[var(--radius-button)] text-sm font-medium transition-colors
+              sm:h-10
               ${
                 unsupported
                   ? 'cursor-default bg-white/10 text-white/35'
@@ -122,23 +124,23 @@ export default function SyncToAudioPanel({
         </div>
       }
     >
-      <div className="px-4 pb-3 pt-4 text-center">
+      <div className="px-3 pb-2.5 pt-3 text-center sm:px-4 sm:pb-3 sm:pt-4">
         <div className="flex justify-center">
           <Badge live={listening} />
         </div>
 
-        <h3 className="mt-3 text-sm font-semibold text-white">Sync to audio</h3>
+        <h3 className="mt-2 text-sm font-semibold text-white sm:mt-3">Sync to audio</h3>
 
-        <p className="mx-auto mt-1 max-w-[15rem] text-xs leading-snug text-white/55">
+        <p className="mx-auto mt-1 max-w-[15rem] text-[11px] leading-snug text-white/55 sm:text-xs">
           {message(status, seconds, score)}
         </p>
 
-        <div className="mt-4">
-          <p className="text-3xl font-semibold tabular-nums tracking-tight text-white">
+        <div className="mt-3 sm:mt-4">
+          <p className="text-2xl font-semibold tabular-nums tracking-tight text-white sm:text-3xl">
             {reading(offset)}
-            <span className="ml-1 text-base font-normal text-white/45">s</span>
+            <span className="ml-1 text-sm font-normal text-white/45 sm:text-base">s</span>
           </p>
-          <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
+          <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-white/40 sm:mt-1">
             Subtitle offset
           </p>
         </div>
@@ -147,7 +149,8 @@ export default function SyncToAudioPanel({
           <button
             type="button"
             onClick={onCancel}
-            className="mt-4 text-xs text-white/50 underline-offset-2 transition-colors hover:text-white/80 hover:underline"
+            className="mt-3 text-xs text-white/50 underline-offset-2 transition-colors
+              hover:text-white/80 hover:underline sm:mt-4"
           >
             Cancel
           </button>

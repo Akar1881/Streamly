@@ -342,7 +342,8 @@ export default function FilterBar({
           onClear={() => setDraft(emptyFilters())}
           onApply={apply}
         >
-          <div className="max-h-[60vh] space-y-6 overflow-y-auto pr-1">
+          {/* The dialog body is the scroller — no height of its own to add. */}
+          <div className="space-y-6 pr-1">
             {order.map((key) => (
               <section key={key} className="space-y-3">
                 <h3 className="text-sm font-medium text-text">{SECTIONS[key].heading}</h3>

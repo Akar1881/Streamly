@@ -370,7 +370,9 @@ export function CompanyPanel({ selected = [], seed = [], names = {}, onChange })
         </div>
       )}
 
-      <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+      {/* No scroller of its own: the dialog body is the one that scrolls, so
+          there is a single place to drag on a touch screen. */}
+      <div className="space-y-2">
         {options.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted">
             {loading ? 'Searching…' : 'No companies found'}
@@ -413,7 +415,7 @@ function labelOf(options, seed, names, id) {
  * ------------------------------------------------------------------------- */
 export function ChoiceList({ options = [], value, onChange, emptyLabel }) {
   return (
-    <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+    <div className="space-y-1.5">
       {emptyLabel && (
         <ListRow label={emptyLabel} active={!value} onClick={() => onChange('')} />
       )}
@@ -468,10 +470,10 @@ function ListDialog({ title, subtitle, placeholder, emptyLabel, options, value, 
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-md rounded-[var(--radius-card)] border border-line bg-surface
-          p-5 shadow-2xl"
+        className="flex max-h-[calc(90dvh-2rem)] w-full max-w-md flex-col
+          rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-2xl"
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex shrink-0 items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-text">{title}</h2>
             {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
@@ -487,7 +489,7 @@ function ListDialog({ title, subtitle, placeholder, emptyLabel, options, value, 
           </button>
         </div>
 
-        <div className="mt-4 mb-3 flex h-10 items-center gap-2 rounded-[var(--radius-pill)]
+        <div className="mt-4 mb-3 flex h-10 shrink-0 items-center gap-2 rounded-[var(--radius-pill)]
           border border-line bg-card px-4 focus-within:border-muted">
           <Icon name="search" size={15} className="shrink-0 text-muted" />
           <input
@@ -502,7 +504,7 @@ function ListDialog({ title, subtitle, placeholder, emptyLabel, options, value, 
           />
         </div>
 
-        <div className="max-h-[50vh] space-y-1.5 overflow-y-auto pr-1">
+        <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
           <ListRow
             label={emptyLabel}
             active={!value}

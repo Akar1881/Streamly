@@ -1,3 +1,5 @@
+import { inspectStream } from './quality';
+
 /**
  * What viewers are told this source is called.
  *
@@ -12,6 +14,30 @@
  * browser either; this is the second line of the same defence, not the only one.
  */
 const CODENAME = 'Neon';
+
+/** Put valid manifests first, widest rendition first, without discarding fallbacks. */
+async function rankSources(sources, signal) {
+  const inspected = await Promise.all(
+    sources.map(async (source, index) => {
+      if (!/mpegurl/i.test(source.type ?? '')) {
+        return { source, index, available: null, quality: null };
+      }
+
+      const { available, quality } = await inspectStream(source.src, { signal, timeoutMs: 2500 });
+      return { source, index, available, quality };
+    }),
+  );
+
+  const rank = (entry) => (entry.available === true ? 0 : entry.available === null ? 1 : 2);
+  return inspected
+    .sort(
+      (left, right) =>
+        rank(left) - rank(right) ||
+        (right.quality?.width ?? 0) - (left.quality?.width ?? 0) ||
+        left.index - right.index,
+    )
+    .map(({ source }, index) => ({ ...source, label: `${CODENAME} ${index + 1}` }));
+}
 
 /**
  * What a stream is, as a MIME type `isHls` in `src/lib/player/source.js` reads.
@@ -96,14 +122,16 @@ export default {
      * only ordering signal that means anything. Nothing here reorders or
      * filters.
      */
-    return {
-      sources: streams
+    const sources = streams
         .filter((stream) => typeof stream.url === 'string' && stream.url.length > 0)
         .map((stream, index) => ({
           src: proxied(stream),
           type: mimeType(stream),
           label: `${CODENAME} ${index + 1}`,
-        })),
+        }));
+
+    return {
+      sources: await rankSources(sources, signal),
 
       // No `tracks`, and that is the decision rather than an omission. The
       // servers behind this provider do not hand back a subtitle a player can

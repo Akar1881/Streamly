@@ -192,6 +192,7 @@ export default function VideoPlayer({
 
   // --- the stream ---------------------------------------------------------
   const [engine, setEngine] = useState({ engine: 'direct', levels: [], current: -1, auto: true });
+  const [sourceAttempt, setSourceAttempt] = useState({ key: null, index: 0 });
 
   // --- subtitles ----------------------------------------------------------
   const [settings, setSettings] = useState(defaultSettings);
@@ -199,7 +200,11 @@ export default function VideoPlayer({
   const [cues, setCues] = useState([]);
   const [delay, setDelay] = useState(0);
 
-  const source = sources[0] ?? null;
+  const sourceKey = `${providerId ?? ''}:${title ?? ''}:${sources[0]?.src ?? ''}`;
+  const sourceIndex = sourceAttempt.key === sourceKey
+    ? Math.min(sourceAttempt.index, Math.max(0, sources.length - 1))
+    : 0;
+  const source = sources[sourceIndex] ?? null;
   const sourceSrc = source?.src ?? null;
   const sourceType = source?.type;
 
@@ -228,7 +233,14 @@ export default function VideoPlayer({
       type: sourceType,
       headers: latestSource.current?.headers,
       onEngine: setEngine,
-      onError: (cause) => setError(cause?.message ?? 'This stream could not be played.'),
+      onError: (cause) => {
+        const nextIndex = sourceIndex + 1;
+        if (nextIndex < sources.length) {
+          setSourceAttempt({ key: sourceKey, index: nextIndex });
+          return;
+        }
+        setError(cause?.message ?? 'This stream could not be played.');
+      },
     });
 
     sourceRef.current = handle;
@@ -242,7 +254,7 @@ export default function VideoPlayer({
       handle.dispose();
       sourceRef.current = null;
     };
-  }, [video, sourceSrc, sourceType]);
+  }, [video, sourceKey, sourceIndex, sourceSrc, sourceType, sources.length]);
 
   // Element events. One effect, because they all do the same thing: copy a
   // property of the element into the state the chrome renders from.

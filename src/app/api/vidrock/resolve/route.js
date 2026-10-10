@@ -58,6 +58,11 @@ export async function POST(request) {
     // make, and without it every navigation away would leave a line in the log.
     if (error?.name === 'AbortError') return new Response(null, { status: 499 });
 
+    if (error?.code === 'VIDROCK_TIMEOUT') {
+      console.error('Vidrock resolution timed out.');
+      return Response.json({ error: 'Vidrock took too long to respond.' }, { status: 504 });
+    }
+
     console.error('Vidrock resolution failed:', error);
     return Response.json({ error: 'Vidrock could not resolve this title.' }, { status: 502 });
   }

@@ -78,24 +78,35 @@ function readResolution(text) {
  *          after choosing it.
  */
 export async function measureStream(src, { signal, timeoutMs = PROBE_TIMEOUT_MS } = {}) {
-  if (typeof src !== 'string' || src.length === 0) return null;
+  const result = await inspectStream(src, { signal, timeoutMs });
+  return result.quality;
+}
+
+/** Whether an HLS URL returns a playlist, and its highest declared rendition. */
+export async function inspectStream(src, { signal, timeoutMs = PROBE_TIMEOUT_MS } = {}) {
+  const unavailable = { available: false, quality: null };
+  if (typeof src !== 'string' || src.length === 0) return unavailable;
 
   const controller = new AbortController();
   const relay = () => controller.abort();
-  signal?.addEventListener('abort', relay, { once: true });
+  if (signal?.aborted) controller.abort();
+  else signal?.addEventListener('abort', relay, { once: true });
   const deadline = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(src, { signal: controller.signal, cache: 'no-store' });
-    if (!response.ok) return null;
+    if (!response.ok) return unavailable;
 
-    const resolution = readResolution(await response.text());
-    return resolution ? { ...resolution, label: `${resolution.height}p` } : null;
+    const text = await response.text();
+    if (!text.replace(/^\uFEFF/, '').trimStart().startsWith('#EXTM3U')) return unavailable;
+
+    const resolution = readResolution(text);
+    return {
+      available: true,
+      quality: resolution ? { ...resolution, label: `${resolution.height}p` } : null,
+    };
   } catch {
-    // Unreachable, forbidden, not HLS, timed out — all of them mean this stream
-    // has no measured quality, and none of them are worth telling the viewer
-    // about, because the stream itself is about to be shown to them regardless.
-    return null;
+    return unavailable;
   } finally {
     clearTimeout(deadline);
     signal?.removeEventListener('abort', relay);

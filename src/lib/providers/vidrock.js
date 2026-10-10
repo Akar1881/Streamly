@@ -108,6 +108,8 @@ const HEADERS = {
 const KEY_HEX = '7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f';
 
 const LOOKUP_TIMEOUT_MS = 8000;
+const MAX_LOOKUP_ATTEMPTS = 2;
+const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 /** The key, as bytes. */
 function keyBytes() {
@@ -202,34 +204,54 @@ export async function inspectVidrock({
   const path =
     mediaType === 'tv' ? `/api/tv/${tmdbId}/${season}/${episode}` : `/api/movie/${tmdbId}`;
 
-  const controller = new AbortController();
-  const deadline = setTimeout(() => controller.abort(), LOOKUP_TIMEOUT_MS);
-  const forwardAbort = () => controller.abort();
-  signal?.addEventListener('abort', forwardAbort, { once: true });
+  for (let attempt = 1; attempt <= MAX_LOOKUP_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const forwardAbort = () => controller.abort();
+    signal?.addEventListener('abort', forwardAbort, { once: true });
+    if (signal?.aborted) controller.abort();
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      headers: HEADERS,
-      cache: 'no-store',
-      signal: controller.signal,
-    });
+    let timedOut = false;
+    const deadline = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, LOOKUP_TIMEOUT_MS);
 
-    if (!response.ok) throw new Error(`Vidrock answered ${response.status}`);
+    try {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        headers: HEADERS,
+        cache: 'no-store',
+        signal: controller.signal,
+      });
 
-    const sealed = (await response.json())?.[SERVER]?.url;
-    if (typeof sealed !== 'string' || sealed.length === 0) return { streams: [] };
+      if (!response.ok) {
+        if (attempt < MAX_LOOKUP_ATTEMPTS && RETRYABLE_STATUSES.has(response.status)) continue;
+        throw new Error(`Vidrock answered ${response.status}`);
+      }
 
-    const url = await unseal(sealed);
+      const sealed = (await response.json())?.[SERVER]?.url;
+      if (typeof sealed !== 'string' || sealed.length === 0) return { streams: [] };
 
-    // A sealed address that does not open into an https URL is a shape we do
-    // not understand — a change on their side, most likely. That is a miss and
-    // not a fault: the viewer gets the other providers, which is what they
-    // would have got had this one never been added.
-    if (!/^https:\/\//.test(url)) return { streams: [] };
+      const url = await unseal(sealed);
 
-    return { streams: [{ url, type: 'application/x-mpegURL' }] };
-  } finally {
-    clearTimeout(deadline);
-    signal?.removeEventListener('abort', forwardAbort);
+      // A sealed address that does not open into an https URL is a shape we do
+      // not understand — a change on their side, most likely. That is a miss and
+      // not a fault: the viewer gets the other providers, which is what they
+      // would have got had this one never been added.
+      if (!/^https:\/\//.test(url)) return { streams: [] };
+
+      return { streams: [{ url, type: 'application/x-mpegURL' }] };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (timedOut) {
+        throw Object.assign(new Error('Vidrock lookup timed out.'), { code: 'VIDROCK_TIMEOUT' });
+      }
+      if (attempt < MAX_LOOKUP_ATTEMPTS && error?.name !== 'AbortError') continue;
+      throw error;
+    } finally {
+      clearTimeout(deadline);
+      signal?.removeEventListener('abort', forwardAbort);
+    }
   }
+
+  return { streams: [] };
 }

@@ -198,13 +198,13 @@ async function unseal(sealed, nonce) {
  */
 const SERVERS = [
   'nextgencloudfabric',
-  'hollymoviehd',
+   'hollymoviehd',
   'klikxxi',
   'rpmvid',
   'allmovies',
   'vidlink',
   'flixhq',
-  'vidzee',
+ // 'vidzee',
   'onehd',
 ];
 

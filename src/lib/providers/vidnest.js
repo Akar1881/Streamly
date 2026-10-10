@@ -26,6 +26,22 @@
  *  `localhost` — while refusing the domain this site is really served from, and
  *  another wants a `Referer` and sends no CORS at all. The first of those works
  *  on a development machine and fails in production, which is how it was found.
+ *
+ *  ---------------------------------------------------------------------------
+ *  No subtitles, deliberately
+ *  ---------------------------------------------------------------------------
+ *
+ *  Two of the ten servers answer with subtitle links, and both kinds are dropped
+ *  here. They arrive as bare paths — `/sub/<base64>` with no host attached — so
+ *  there is nothing for this server to fetch and nothing a browser could play
+ *  either. They were not harmless: each one reached the player's captions menu as
+ *  an entry that did nothing when it was picked, and the translation pipeline
+ *  offered the first of them as its source, so every job spent a fetch failing
+ *  before falling back to the source that works.
+ *
+ *  This site has a subtitle pipeline of its own — see `src/lib/subtitles/` — and
+ *  it is what a title gets. A provider that brings a subtitle worth having is
+ *  still welcome to; this one does not, so it does not claim to.
  * ============================================================================
  */
 
@@ -141,7 +157,6 @@ export async function inspectVidnest({
     if (!tmdbId) throw new Error('tmdbId is required for VidNest');
 
     const sources = [];
-    const subtitles = [];
 
     /**
      * A server that answers nothing loses, but it loses on its own.
@@ -189,24 +204,32 @@ export async function inspectVidnest({
     for (const result of results) {
         if (result.status === 'fulfilled' && result.value) {
             const { server, data } = result.value;
-            const parsed = parseServerResponse(server, data);
-            sources.push(...parsed.streams);
-            subtitles.push(...parsed.subtitles);
+            sources.push(...parseServerResponse(server, data));
         }
     }
 
     return {
         provider: 'vidnest',
-        streams: sources,
-        subtitles
+        streams: sources
     };
 }
 
+/**
+ * One server's reply, as the streams in it.
+ *
+ * The shape of a reply is the server's own — `sources` with `file` in them for
+ * one, a nested `data.stream.playlist` for another — so each case below is a
+ * description of what that server actually sends rather than a shared parser.
+ * What a server does not send, or sends in a shape nothing here recognises,
+ * contributes nothing: a nameless key falls to the default, and a reply with no
+ * data in it at all ends at the first line.
+ *
+ * @returns {Array<{provider: string, quality: string, url: string, type: string}>}
+ */
 function parseServerResponse(serverName, data) {
     const streams = [];
-    const subtitles = [];
 
-    if (!data) return { streams, subtitles };
+    if (!data) return streams;
 
     switch (serverName) {
         case 'klikxxi':
@@ -229,24 +252,10 @@ function parseServerResponse(serverName, data) {
             if (data.data?.stream?.playlist) {
                 streams.push({ provider: serverName, quality: 'Auto', url: data.data.stream.playlist, type: data.data.stream.type || 'hls' });
             }
-            if (data.data?.stream?.captions && Array.isArray(data.data.stream.captions)) {
-                data.data.stream.captions.forEach(c => subtitles.push({
-                    url: c.url,
-                    lang: c.language,
-                    format: c.url.includes('.srt') ? 'srt' : 'vtt'
-                }));
-            }
             break;
         case 'onehd':
             if (data.url) {
                 streams.push({ provider: serverName, quality: 'Auto', url: data.url, type: 'hls' });
-            }
-            if (data.subtitles && Array.isArray(data.subtitles)) {
-                data.subtitles.forEach(sub => subtitles.push({
-                    url: sub.url,
-                    lang: sub.lang,
-                    format: sub.url.includes('.srt') ? 'srt' : 'vtt'
-                }));
             }
             break;
         case 'moviebox':
@@ -261,5 +270,5 @@ function parseServerResponse(serverName, data) {
             break;
     }
 
-    return { streams, subtitles };
+    return streams;
 }

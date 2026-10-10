@@ -20,7 +20,7 @@ export async function POST(request) {
   }
 
   try {
-    const { streams, subtitles } = await inspectVidnest({
+    const { streams } = await inspectVidnest({
       tmdbId,
       mediaType,
       season: Number(season),
@@ -36,12 +36,14 @@ export async function POST(request) {
     // `url` and `type` are the two the provider reads; `quality` is kept because
     // it is the only thing that describes the picture when a stream carries no
     // resolution of its own.
+    //
+    // No subtitles come back with them. The links these servers offer are
+    // relative paths, which are neither fetchable here nor playable in a
+    // browser, and carrying them this far only put entries in the captions menu
+    // that did nothing. See the account in `src/lib/providers/vidnest.js`.
     const playable = streams.map(({ url, type, quality }) => ({ url, type, quality }));
 
-    return Response.json(
-      { streams: playable, subtitles },
-      { headers: { 'Cache-Control': 'no-store' } },
-    );
+    return Response.json({ streams: playable }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('Vidnest resolution failed:', error);
     return Response.json({ error: 'Vidnest could not resolve this title.' }, { status: 502 });

@@ -69,7 +69,7 @@ export default {
 
     if (!response.ok) throw new Error(`Vidnest resolution failed (${response.status}).`);
 
-    const { streams, subtitles } = await response.json();
+    const { streams } = await response.json();
     if (!Array.isArray(streams) || streams.length === 0) return null;
 
     /**
@@ -94,20 +94,11 @@ export default {
           label: `${CODENAME} ${index + 1}`,
         })),
 
-      // Whatever subtitles came back with the streams. Passed through as they
-      // arrive, duplicates and all: collapsing them is a decision about what a
-      // menu should look like, and `src/lib/player/tracks.js` is where the
-      // player's menu makes it — for every provider at once, rather than each
-      // provider guessing at what the others will send.
-      //
-      // `label` is the language as the upstream server wrote it, which is the
-      // only name these files have.
-      tracks: (Array.isArray(subtitles) ? subtitles : [])
-        .filter((track) => typeof track?.url === 'string' && track.url.length > 0)
-        .map((track) => ({
-          src: track.url,
-          label: track.lang ?? 'Unknown',
-        })),
+      // No `tracks`, and that is the decision rather than an omission. The
+      // servers behind this provider do not hand back a subtitle a player can
+      // use, so none is offered — the site's own pipeline finds one instead,
+      // which is what every viewer was getting anyway. The account is in
+      // `src/lib/providers/vidnest.js`, where those links are dropped.
     };
   },
 };

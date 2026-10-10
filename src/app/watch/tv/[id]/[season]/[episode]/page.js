@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { getSeason, getShow } from '@/lib/tmdb/tv';
+import { getNextEpisode, getSeason, getShow } from '@/lib/tmdb/tv';
+import { stillUrl } from '@/lib/images';
 import { daysUntil, formatDate, formatRuntime, joinMeta, parseId, toSlugId } from '@/lib/format';
 import PlayerStage from '@/components/player/PlayerStage';
 import ReleaseNotice from '@/components/media/ReleaseNotice';
@@ -60,6 +61,24 @@ export default async function WatchEpisodePage({ params }) {
   // A deep link to an episode that has not aired yet has nothing to play.
   const unaired = (daysUntil(episode.airDate) ?? 0) > 0;
 
+  // What the player offers when this episode is nearly over. Resolved here, on
+  // the server, rather than in the player: which episode is next depends on the
+  // show's seasons and on whether that episode has aired, and neither is
+  // something the player knows about — it is handed urls and a title, no more.
+  // `null` for an unaired page, which has no player to offer anything over.
+  const next = unaired
+    ? null
+    : await getNextEpisode(show.id, show.seasons, season, seasonNumber, episodeNumber);
+
+  const nextUp = next
+    ? {
+        href: `/watch/tv/${slug}/${next.seasonNumber}/${next.episodeNumber}`,
+        code: `S${next.seasonNumber}E${next.episodeNumber}`,
+        title: next.name,
+        still: stillUrl(next.stillPath),
+      }
+    : null;
+
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       <Link
@@ -79,7 +98,7 @@ export default async function WatchEpisodePage({ params }) {
           participle="aired"
         />
       ) : (
-        <PlayerStage media={show} season={seasonNumber} episode={episodeNumber} />
+        <PlayerStage media={show} season={seasonNumber} episode={episodeNumber} next={nextUp} />
       )}
 
       <header className="mt-6">

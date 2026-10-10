@@ -1,4 +1,5 @@
 import site from '@config/site';
+import { daysUntil } from '@/lib/format';
 import { pickLogo } from '@/lib/images';
 import { tmdbFetch } from './client';
 import { normaliseEpisode, normaliseMedia } from './normalise';
@@ -174,4 +175,40 @@ export function neighbourEpisodes(seasons, seasonNumber, episodeNumber) {
     previous: flat[index - 1] ?? null,
     next: flat[index + 1] ?? null,
   };
+}
+
+/**
+ * The next episode that can actually be watched, with the art and the title the
+ * player's end-of-episode card needs.
+ *
+ * `neighbourEpisodes` answers with numbers, because that is all the prev/next
+ * links print. A card that shows a thumbnail and a name needs the record, and
+ * the record for an episode in the season being watched is already in hand —
+ * `seasonData` is the same fetch the page made for itself, so the common case
+ * costs nothing.
+ *
+ * Crossing a season boundary is the only case that needs the network, and only
+ * then is the neighbouring season fetched. It is cached with the rest of the
+ * detail data, so it is a request per revalidation window, not per visitor.
+ *
+ * `null` means there is nothing to offer, which is two situations the caller
+ * does not have to tell apart: the show has ended, or the next episode has not
+ * aired yet. An episode with a future air date has nothing to play, so offering
+ * it would be a card that leads to a countdown.
+ */
+export async function getNextEpisode(showId, seasons, seasonData, seasonNumber, episodeNumber) {
+  const { next } = neighbourEpisodes(seasons, seasonNumber, episodeNumber);
+  if (!next) return null;
+
+  let episode = null;
+  if (next.season === Number(seasonNumber)) {
+    episode = seasonData.episodes.find((item) => item.episodeNumber === next.episode) ?? null;
+  } else {
+    const ahead = await getSeason(showId, next.season).catch(() => null);
+    episode = ahead?.episodes.find((item) => item.episodeNumber === next.episode) ?? null;
+  }
+
+  if (!episode || (daysUntil(episode.airDate) ?? 0) > 0) return null;
+
+  return episode;
 }

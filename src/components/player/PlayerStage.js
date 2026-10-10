@@ -125,8 +125,12 @@ function ChannelLink() {
  *                                   `id`, `mediaType`, `title`; `imdbId` for movies
  * @param {number} [props.season]    episodes only
  * @param {number} [props.episode]   episodes only
+ * @param {object} [props.next]      the episode after this one, for the card the
+ *                                   player offers near the end — `{ href, code,
+ *                                   title, still }`, resolved by the watch page.
+ *                                   Absent for movies and for a show's finale.
  */
-export default function PlayerStage({ media, season, episode }) {
+export default function PlayerStage({ media, season, episode, next }) {
   const providers = useMemo(() => listProviders(), []);
 
   /**
@@ -548,6 +552,7 @@ export default function PlayerStage({ media, season, episode }) {
           unavailable={unavailableIds}
           qualities={qualities}
           onSelectProvider={chooseProvider}
+          nextEpisode={next}
         />
       ) : (
         <NoSource title={unavailable.title} body={unavailable.body}>

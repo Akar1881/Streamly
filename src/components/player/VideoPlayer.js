@@ -11,6 +11,7 @@ import SpeedMenu from '@/components/player/SpeedMenu';
 import SubtitleSettingsPanel from '@/components/player/SubtitleSettingsPanel';
 import SubtitleOverlay from '@/components/player/SubtitleOverlay';
 import ProviderMenu from '@/components/player/ProviderMenu';
+import NextEpisodeCard from '@/components/player/NextEpisodeCard';
 import { useTouchGestures } from '@/components/player/useTouchGestures';
 import { attachSource } from '@/lib/player/source';
 import { parseTrack } from '@/lib/player/cues';
@@ -52,6 +53,15 @@ const SKIP_SECONDS = 10;
 
 /** How often `onProgress` is reported, in seconds. */
 const PROGRESS_EVERY = 5;
+
+/**
+ * How far into a title the next one is offered, as a fraction of the runtime.
+ *
+ * A position rather than a countdown of seconds left, because the length of a
+ * title is not something to assume: at this point an episode is into its
+ * credits, and a film — which is handed no `nextEpisode` at all — is unaffected.
+ */
+const NEXT_AT = 0.95;
 
 /** What a held pointer multiplies playback by, when "Hold for 2×" is on. */
 const HOLD_RATE = 2;
@@ -130,6 +140,10 @@ function unlockOrientation() {
  *        how good each provider's stream measured, by id — the reason the menu
  *        can say why one of them is playing and not another
  * @param {(id: string) => void} [props.onSelectProvider]
+ * @param {{href: string, code: string, title: string, still?: string}} [props.nextEpisode]
+ *        the episode after this one, offered over the picture once the current
+ *        one is nearly over. Absent for a film, and for the last episode of a
+ *        show — in both cases there is nothing to offer and no card is drawn.
  */
 export default function VideoPlayer({
   sources = [],
@@ -145,6 +159,7 @@ export default function VideoPlayer({
   unavailable = [],
   qualities = {},
   onSelectProvider,
+  nextEpisode = null,
 }) {
   const containerRef = useRef(null);
   const sourceRef = useRef(null); // the live engine handle
@@ -189,6 +204,9 @@ export default function VideoPlayer({
   const [hoveringBar, setHoveringBar] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [scrub, setScrub] = useState(null); // seconds while dragging the seek bar
+  // The viewer closed the end-of-episode card. Scoped to the episode it was
+  // closed on, so the next one's card is not suppressed along with it.
+  const [nextDismissed, setNextDismissed] = useState(false);
 
   // --- the stream ---------------------------------------------------------
   const [engine, setEngine] = useState({ engine: 'direct', levels: [], current: -1, auto: true });
@@ -222,6 +240,14 @@ export default function VideoPlayer({
   useEffect(() => {
     latestSource.current = source;
   }, [source]);
+
+  // Dismissing the end-of-episode card lasts for the episode it was dismissed
+  // on. Keyed on where the card would lead, because that is exactly the thing
+  // that changes when the player moves on — a new episode earns a fresh card,
+  // and a change of source within the same episode does not.
+  useEffect(() => {
+    setNextDismissed(false);
+  }, [nextEpisode?.href]);
 
   // Attaching is the one effect that must survive React running it twice in
   // development: `attachSource` is async internally, and `dispose` is written to
@@ -766,6 +792,26 @@ export default function VideoPlayer({
 
   const shownTime = scrub ?? time;
 
+  /**
+   * Whether the next-episode card is on screen.
+   *
+   * Position, not time-remaining: past `NEXT_AT` of the runtime the episode is
+   * in its credits, whatever its length. The duration guard is the same one the
+   * seek bar uses — it is `NaN` until the metadata arrives and `Infinity` for a
+   * live stream, and neither is a position anyone is "95% through".
+   *
+   * `time` rather than `shownTime`: the card answers "you have almost finished
+   * this", which is a fact about playback, not about where the bar is being
+   * dragged. Nothing here knows how to write a card, either — `nextEpisode`
+   * arrives finished, and its absence is how a film and a finale opt out.
+   */
+  const offerNext =
+    Boolean(nextEpisode) &&
+    !nextDismissed &&
+    Number.isFinite(duration) &&
+    duration > 0 &&
+    time / duration >= NEXT_AT;
+
   const qualityLabel = useMemo(() => {
     if (!engine.levels.length) return 'Auto';
     if (engine.auto) return 'Auto';
@@ -1016,6 +1062,14 @@ export default function VideoPlayer({
             <p className="mt-3 text-[10px] leading-relaxed text-white/30">{error}</p>
           </div>
         </div>
+      )}
+
+      {offerNext && (
+        <NextEpisodeCard
+          {...nextEpisode}
+          raised={visible}
+          onDismiss={() => setNextDismissed(true)}
+        />
       )}
 
       <PlayerCenterControls

@@ -73,9 +73,12 @@ export function isRtl(text) {
  * overlay calls this once per animation frame, and a feature-length track is a
  * few thousand cues.
  *
- * `seconds` is expected to already include the viewer's subtitle delay — the
- * offset is applied to the query, never to the cue list, so changing the delay
- * cannot corrupt the timings that were parsed.
+ * `seconds` is expected to already have the viewer's subtitle delay taken out of
+ * it — the offset is applied to the query, never to the cue list, so changing
+ * the delay cannot corrupt the timings that were parsed. The sign belongs to the
+ * caller and is stated there: the overlay looks up `time - delay`, so a positive
+ * delay is a subtitle that appears later. See the header of `sync.js`, which is
+ * the other place that has to agree.
  *
  * @param {{ startMs: number, endMs: number, text: string }[]} cues  sorted by `startMs`
  * @param {number} seconds

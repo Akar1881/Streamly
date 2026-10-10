@@ -31,6 +31,31 @@ const MSE = 'MediaSource' in globalThis;
 /** How many times a fatal error is retried before the player admits defeat. */
 const MAX_RECOVERIES = 3;
 
+/** How often the rung in hand is reconsidered once it has been stepped down. */
+const RECHECK_MS = 8000;
+
+/** How much buffer ahead of the playhead is enough to try the next rung up. */
+const HEALTHY_BUFFER = 45;
+
+/** How far under the estimate the next rung's bitrate must be to climb to it. */
+const CLIMB_MARGIN = 1.3;
+
+/** How long after stepping down before another step down is allowed. */
+const DROP_COOLDOWN_MS = 5000;
+
+/** How much film is downloaded and waiting, ahead of where the viewer is. */
+function bufferedAhead(video) {
+  const { buffered, currentTime } = video;
+
+  for (let index = 0; index < buffered.length; index += 1) {
+    if (currentTime >= buffered.start(index) && currentTime <= buffered.end(index)) {
+      return buffered.end(index) - currentTime;
+    }
+  }
+
+  return 0;
+}
+
 /** Whether a source is an HLS playlist, from its declared type or its URL. */
 function isHls(src, type) {
   if (type) return /mpegurl/i.test(type);
@@ -216,6 +241,25 @@ export function attachSource(video, src, { type, headers, onEngine, onAudio, onE
   let levels = [];
   let current = -1;
 
+  /**
+   * The rung being aimed for, and whether the viewer aimed it.
+   *
+   * `wanted` is `-1` while the engine is choosing for itself, which is what the
+   * quality menu's Auto writes. It is the top rung otherwise — pinned by the
+   * manifest handler by default, or by the viewer from the menu.
+   *
+   * `chosen` records *who* pinned it. The default pin is ours and we may walk it
+   * down and back up as the connection proves itself; a rung the viewer picked
+   * is theirs, and a player that quietly overrode it would be a player whose
+   * quality menu lies.
+   */
+  let wanted = -1;
+  let chosen = false;
+
+  /** The rung-rechecking timer, and when the last step down happened. */
+  let guard = 0;
+  let lastDrop = 0;
+
   const report = (engine) => {
     if (disposed) return;
     onEngine?.({ engine, levels, current, auto: current === -1 });
@@ -224,6 +268,9 @@ export function attachSource(video, src, { type, headers, onEngine, onAudio, onE
   /** Undoes everything this call did. Safe to call twice, and from anywhere. */
   function dispose() {
     disposed = true;
+
+    clearInterval(guard);
+    guard = 0;
 
     if (hls) {
       // `destroy()`, not `detachMedia()`. Detaching leaves the loader running —
@@ -242,10 +289,19 @@ export function attachSource(video, src, { type, headers, onEngine, onAudio, onE
     video.load();
   }
 
-  /** A manual level, or `-1` for automatic. A no-op on engines without levels. */
+  /**
+   * A manual level, or `null` for automatic. A no-op on engines without levels.
+   *
+   * This is the viewer taking the wheel, so `chosen` goes up here and the
+   * automatic step-down below stands down for the rest of the source. Picking
+   * Auto hands the rung back to hls.js entirely, which is the one case where
+   * `wanted` is not a rung at all.
+   */
   function setLevel(index) {
     if (!hls || disposed) return;
-    hls.currentLevel = index === null ? -1 : index;
+    chosen = true;
+    wanted = index === null ? -1 : index;
+    hls.currentLevel = wanted;
   }
 
   /** A manual audio rendition. A no-op on engines with nothing to choose. */
@@ -308,11 +364,32 @@ export function attachSource(video, src, { type, headers, onEngine, onAudio, onE
         // `startLevel`.
         startLevel: -1,
         // Roomier than the default, because a pinned top rendition has no lower
-        // level to fall back to: without a cushion of downloaded buffer in front
-        // of the playhead, the first bandwidth dip becomes a stall instead of a
-        // quiet downgrade. 40s at ~15 Mbps is roughly 75 MB, hence the size.
-        maxBufferLength: 40,
-        maxBufferSize: 80 * 1000 * 1000,
+        // level to fall back to on the next bandwidth sample: without a cushion
+        // of already-downloaded film in front of the playhead, one dip is a
+        // stall rather than a quiet downgrade. The cushion also buys the
+        // step-down below the seconds it needs to notice and react.
+        //
+        // The engine reads these three through one rule
+        // (`base-stream-controller.getMaxBufferLength`):
+        //
+        //     min( max(8 * maxBufferSize / bitrate, maxBufferLength),
+        //          maxMaxBufferLength )
+        //
+        // so the size is entered in *bits* against the rung's bitrate and only
+        // ever raises the target — it cannot cap `maxBufferLength`, which is the
+        // opposite of what its name suggests. `maxBufferLength` is therefore the
+        // real knob at 4K, where a size-derived term of ~64s loses to it, and
+        // `maxMaxBufferLength` is what stops the size term from running away at
+        // the bottom of a ladder, where the same arithmetic yields minutes.
+        //
+        // Net effect: ninety seconds of run-up at the very least, three minutes
+        // at most. In bytes that is at its steepest at the top of the ladder —
+        // ninety seconds of 4K is near 280 MB — and it falls away with the
+        // bitrate, because the size term is what sets the depth below about
+        // 18 Mbps and 200 MB is what it is asked to hold.
+        maxBufferLength: 90,
+        maxMaxBufferLength: 300,
+        maxBufferSize: 200 * 1000 * 1000,
         enableWorker: true,
         ...headerConfig(headers),
       });
@@ -321,6 +398,60 @@ export function attachSource(video, src, { type, headers, onEngine, onAudio, onE
       const reportAudio = () => {
         if (!disposed) onAudio?.(readAudioTracks(hls));
       };
+
+      /**
+       * One rung down, because the one in hand has just proven it cannot be
+       * delivered.
+       *
+       * Only ever called on a stall — evidence, rather than a guess from the
+       * bandwidth estimate, which is at its least trustworthy in the seconds
+       * after a stall has skewed it. Nothing else in this file is allowed to
+       * move the rung downwards.
+       *
+       * The cooldown is for the case a stall snowballs: playback stops, the
+       * level switch is requested, and the next stall report arrives from the
+       * same episode before the switch has landed. Without it the ladder
+       * collapses to the bottom rung over a bad ten seconds.
+       */
+      function stepDown() {
+        if (chosen || wanted < 0 || current <= 0) return;
+
+        const now = performance.now();
+        if (now - lastDrop < DROP_COOLDOWN_MS) return;
+        lastDrop = now;
+
+        hls.currentLevel = current - 1;
+      }
+
+      /**
+       * Gives the default pin a rung back, once the connection looks able to
+       * carry it.
+       *
+       * The counterpart to `stepDown`, and deliberately much more reluctant than
+       * it. Two conditions, both of which have to hold: real film already
+       * downloaded and waiting *and* an estimate clear of what the next rung
+       * costs. Either one alone is how a ladder oscillates — a full buffer on
+       * its own says only that the download kept up while nothing was being
+       * played, and a flattering estimate on its own is what the last stall
+       * taught us not to trust.
+       *
+       * It climbs one rung at a time and re-checks on a timer, so a connection
+       * that settles down half way up is caught there rather than made to stall
+       * its way back to the floor.
+       */
+      function retune() {
+        if (disposed || !hls || chosen || wanted < 0) return;
+        // Nothing is being watched, so nothing is draining: a buffer that looks
+        // healthy under a paused film has not been tested by anything.
+        if (video.paused || video.ended) return;
+        if (current < 0 || current >= wanted) return;
+        if (bufferedAhead(video) < HEALTHY_BUFFER) return;
+
+        const next = levels[current + 1];
+        if (next && hls.bandwidthEstimate < next.bitrate * CLIMB_MARGIN) return;
+
+        hls.currentLevel = current + 1;
+      }
 
       hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
         levels = (data.levels ?? []).map(readLevel);
@@ -336,7 +467,19 @@ export function attachSource(video, src, { type, headers, onEngine, onAudio, onE
         // bitrate ascending, so the last one is the top.
         //
         // The menu still switches: `setLevel` writes `currentLevel` too.
-        if (levels.length > 1) hls.currentLevel = levels.length - 1;
+        //
+        // What the pin cannot do is play a rung the connection cannot carry, and
+        // left alone it does not fail visibly either — hls.js answers a stall
+        // with nothing at all, so the film simply freezes on the top rung
+        // forever. Hence the guard: the pin is ours, so we may walk it down when
+        // it is proven undeliverable and back up when it is proven fine.
+        if (levels.length > 1) {
+          wanted = levels.length - 1;
+          hls.currentLevel = wanted;
+
+          clearInterval(guard);
+          guard = setInterval(retune, RECHECK_MS);
+        }
 
         current = hls.currentLevel;
         report('hls');
@@ -355,7 +498,29 @@ export function attachSource(video, src, { type, headers, onEngine, onAudio, onE
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, reportAudio);
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (disposed || !data.fatal) return;
+        if (disposed) return;
+
+        /**
+         * The picture has stopped because there is nothing left to play.
+         *
+         * This is the one error hls.js does not act on: its error controller
+         * answers `BUFFER_STALLED_ERROR` with `createDoNothingErrorAction()`,
+         * there is no retry, and the event is not even fatal — so it never
+         * reaches the recovery below and the viewer is left with a frozen
+         * frame and a spinner until the buffer happens to refill. With the rung
+         * pinned there is nothing to refill it *from*, which is how a stream
+         * that is merely too rich for the connection becomes a stream that
+         * does not play.
+         *
+         * Reported once per stall, so this is one step down per episode of
+         * stalling rather than one per frame of it.
+         */
+        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+          stepDown();
+          return;
+        }
+
+        if (!data.fatal) return;
 
         /**
          * A refusal, not a hiccup.

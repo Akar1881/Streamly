@@ -58,6 +58,94 @@ function readLevel(level, index) {
 }
 
 /**
+ * The audio renditions an hls.js instance found, and the one it is playing.
+ *
+ * `audioTracks` is the set belonging to the level being watched, so it is read
+ * again whenever that set changes and whenever a switch lands.
+ *
+ * `id` is carried rather than the array position, because it is what the
+ * engine's setter takes and what it names in its events. For hls.js the two are
+ * the same number — it numbers its renditions per group — but the menu should
+ * not have to know that.
+ *
+ * `audioTrack` is `-1` until the first switch has completed, which is a moment
+ * after the list arrives. The manifest's own default is reported in the
+ * meantime — or the first rendition, when nothing claims to be the default —
+ * because that is the one hls.js is about to select, and a menu that marks
+ * nothing for the first second is wrong rather than merely early.
+ */
+function readAudioTracks(hls) {
+  const list = hls.audioTracks ?? [];
+
+  const tracks = list.map((track, index) => ({
+    id: track.id ?? index,
+    label: track.name || track.lang || `Track ${index + 1}`,
+  }));
+
+  if (hls.audioTrack >= 0) return { tracks, current: hls.audioTrack };
+
+  const fallback = tracks.find((_track, index) => list[index].default) ?? tracks[0];
+  return { tracks, current: fallback ? fallback.id : -1 };
+}
+
+/**
+ * The element's own audio renditions, for the browsers that expose them.
+ *
+ * Safari puts `audioTracks` on the element — a list of `{ label, language,
+ * enabled }` that is switched by toggling `enabled` — and it is the only way to
+ * reach a second audio track in an MP4 or a MOV, which is a thing the container
+ * supports and hls.js has nothing to do with. It is also how Safari's own HLS
+ * player is switched, which the native engine above hands the URL to.
+ *
+ * Firefox has the property but never the renditions, and Chrome has neither: on
+ * those `list` is missing or empty, this reports nothing, and the button stays
+ * away. There is no shim for that — the tracks are inside the file, and the
+ * decoder is the only thing that can reach them.
+ *
+ * @returns {{dispose: () => void, select: (id: number) => void}|null}
+ */
+function attachElementAudio(video, onAudio) {
+  const list = video.audioTracks;
+  if (!list) return null;
+
+  /** The list, and which of it is on, in the shape the menu takes. */
+  const read = () => {
+    const tracks = [];
+    let current = -1;
+
+    for (let index = 0; index < list.length; index += 1) {
+      const track = list[index];
+      tracks.push({
+        id: index,
+        label: track.label || track.language || `Track ${index + 1}`,
+      });
+      if (track.enabled) current = index;
+    }
+
+    onAudio?.({ tracks, current });
+  };
+
+  // Read on `loadedmetadata` rather than only here: an element has no tracks
+  // until it has read the file's header, and for anything handed over through a
+  // manifest the list arrives later still.
+  video.addEventListener('loadedmetadata', read);
+  list.addEventListener?.('change', read);
+  read();
+
+  return {
+    select(id) {
+      for (let index = 0; index < list.length; index += 1) {
+        list[index].enabled = index === id;
+      }
+    },
+    dispose() {
+      video.removeEventListener('loadedmetadata', read);
+      list.removeEventListener?.('change', read);
+    },
+  };
+}
+
+/**
  * A source's headers, in the two shapes hls.js asks for them.
  *
  * hls.js may load through XMLHttpRequest or through fetch depending on the
@@ -111,12 +199,19 @@ function headerConfig(headers) {
  *        called once the engine is chosen and again whenever its levels or the
  *        active level change. `levels` is `null` until a manifest has been read,
  *        and `[]` when the engine has none to offer.
+ * @param {(audio: {tracks: {id: number, label: string}[], current: number}) => void} [handlers.onAudio]
+ *        called with the audio renditions the stream carries and the `id` of
+ *        the one playing, or `-1` for none. Reported once on attach as empty,
+ *        so a list left over from the last source cannot outlive it, then again
+ *        whenever either changes. Empty on engines with nothing to choose —
+ *        which is most of them; see `attachElementAudio`.
  * @param {(error: Error) => void} [handlers.onError]
- * @returns {{ dispose: () => void, setLevel: (index: number|null) => void }}
+ * @returns {{ dispose: () => void, setLevel: (index: number|null) => void, setAudioTrack: (id: number) => void }}
  */
-export function attachSource(video, src, { type, headers, onEngine, onError } = {}) {
+export function attachSource(video, src, { type, headers, onEngine, onAudio, onError } = {}) {
   let disposed = false;
   let hls = null;
+  let elementAudio = null;
   let recoveries = 0;
   let levels = [];
   let current = -1;
@@ -137,6 +232,9 @@ export function attachSource(video, src, { type, headers, onEngine, onError } = 
       hls = null;
     }
 
+    elementAudio?.dispose();
+    elementAudio = null;
+
     // An hls.js instance sets `src` to a blob URL it owns; clearing it stops a
     // direct source from continuing to download in the background after a
     // source change.
@@ -150,13 +248,28 @@ export function attachSource(video, src, { type, headers, onEngine, onError } = 
     hls.currentLevel = index === null ? -1 : index;
   }
 
-  if (!src) return { dispose, setLevel };
+  /** A manual audio rendition. A no-op on engines with nothing to choose. */
+  function setAudioTrack(id) {
+    if (disposed) return;
+    if (hls) hls.audioTrack = id;
+    else elementAudio?.select(id);
+  }
+
+  if (!src) return { dispose, setLevel, setAudioTrack };
+
+  // Neither engine has read anything yet, and the list from the last source
+  // must not be left on screen — its menu would be offering a switch that now
+  // leads nowhere.
+  onAudio?.({ tracks: [], current: -1 });
 
   if (!isHls(src, type)) {
-    // An mp4, or anything else the browser can play on its own.
+    // An mp4, or anything else the browser can play on its own. An MP4 can
+    // still carry a second audio track, so the element is asked before the
+    // engine is declared to have nothing.
     video.src = src;
+    elementAudio = attachElementAudio(video, onAudio);
     onEngine?.({ engine: 'direct', levels: [], current: -1, auto: true });
-    return { dispose, setLevel };
+    return { dispose, setLevel, setAudioTrack };
   }
 
   // --- native HLS ---------------------------------------------------------
@@ -165,13 +278,14 @@ export function attachSource(video, src, { type, headers, onEngine, onError } = 
   // option and on Safari the native path is the better one.
   if (supportsNativeHls(video)) {
     video.src = src;
+    elementAudio = attachElementAudio(video, onAudio);
     onEngine?.({ engine: 'native', levels: [], current: -1, auto: true });
-    return { dispose, setLevel };
+    return { dispose, setLevel, setAudioTrack };
   }
 
   if (!MSE) {
     onError?.(new Error('This browser cannot play HLS.'));
-    return { dispose, setLevel };
+    return { dispose, setLevel, setAudioTrack };
   }
 
   // --- hls.js -------------------------------------------------------------
@@ -203,6 +317,11 @@ export function attachSource(video, src, { type, headers, onEngine, onError } = 
         ...headerConfig(headers),
       });
 
+      /** The renditions and the one playing, read off the instance. */
+      const reportAudio = () => {
+        if (!disposed) onAudio?.(readAudioTracks(hls));
+      };
+
       hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
         levels = (data.levels ?? []).map(readLevel);
 
@@ -227,6 +346,13 @@ export function attachSource(video, src, { type, headers, onEngine, onError } = 
         current = data.level;
         report('hls');
       });
+
+      // Renditions belong to a level's audio group, so the list is not fixed for
+      // the life of the stream: both of these fire when it changes, and between
+      // them they cover a rung that carries a different set and a switch the
+      // viewer asked for.
+      hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, reportAudio);
+      hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, reportAudio);
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (disposed || !data.fatal) return;
@@ -279,5 +405,5 @@ export function attachSource(video, src, { type, headers, onEngine, onError } = 
       if (!disposed) onError?.(error);
     });
 
-  return { dispose, setLevel };
+  return { dispose, setLevel, setAudioTrack };
 }

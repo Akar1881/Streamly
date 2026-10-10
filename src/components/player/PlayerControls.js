@@ -52,6 +52,10 @@ export function volumeIcon(muted, volume) {
  * @param {() => void} props.onToggleMute
  * @param {boolean} props.captionsOn   whether a track is showing
  * @param {string}  props.captionsLabel
+ * @param {{id: number, label: string}[]} props.audioTracks
+ *        the stream's audio renditions; the button appears only when there is
+ *        more than one, because one is a choice with nothing to choose
+ * @param {string}  props.audioLabel   the rendition playing, by name
  * @param {boolean} [props.showSources] whether more than one source is configured
  * @param {string}  [props.sourceLabel] the codename of the one playing
  * @param {string|null} props.openMenu  which menu is open, if any
@@ -81,6 +85,8 @@ export default function PlayerControls({
   onToggleMute,
   captionsOn,
   captionsLabel,
+  audioTracks,
+  audioLabel,
   showSources,
   sourceLabel,
   openMenu,
@@ -249,6 +255,20 @@ export default function PlayerControls({
           // track's name and needs the word put back in front of it.
           ariaLabel: captionsOn ? `Captions: ${captionsLabel}` : captionsLabel,
         })}
+
+        {/* Beside the captions because it is the same kind of choice — which of
+            the stream's tracks is the one being watched — and away entirely
+            when there is only one, which is nearly always: a second audio track
+            has to be authored into the file, and only a stream that carries one
+            is worth the room in the bar. Which rendition is playing is worth
+            naming for the same reason the subtitle is: two of them are two
+            different things to be watching. */}
+        {audioTracks.length > 1 &&
+          menuButton('audio', audioLabel, {
+            icon: 'audio-lines',
+            ariaLabel: `Audio: ${audioLabel}`,
+          })}
+
         {menuButton('quality', qualityLabel, { compactIcon: 'gauge' })}
         {menuButton('speed', speedLabel, { compactIcon: 'zap' })}
 

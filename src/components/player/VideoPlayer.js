@@ -6,6 +6,7 @@ import Icon from '@/components/ui/Icon';
 import PlayerCenterControls from '@/components/player/PlayerCenterControls';
 import PlayerControls, { volumeIcon } from '@/components/player/PlayerControls';
 import CaptionsMenu from '@/components/player/CaptionsMenu';
+import AudioMenu from '@/components/player/AudioMenu';
 import QualityMenu from '@/components/player/QualityMenu';
 import SpeedMenu from '@/components/player/SpeedMenu';
 import SubtitleSettingsPanel from '@/components/player/SubtitleSettingsPanel';
@@ -232,7 +233,7 @@ export default function VideoPlayer({
 
   // --- the chrome ---------------------------------------------------------
   const [visible, setVisible] = useState(true);
-  const [menu, setMenu] = useState(null); // 'sources' | 'captions' | 'quality' | 'speed' | 'settings'
+  const [menu, setMenu] = useState(null); // 'sources' | 'captions' | 'audio' | 'quality' | 'speed' | 'settings'
   const [hoveringBar, setHoveringBar] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [scrub, setScrub] = useState(null); // seconds while dragging the seek bar
@@ -243,6 +244,17 @@ export default function VideoPlayer({
   // --- the stream ---------------------------------------------------------
   const [engine, setEngine] = useState({ engine: 'direct', levels: [], current: -1, auto: true });
   const [sourceAttempt, setSourceAttempt] = useState({ key: null, index: 0 });
+
+  /**
+   * The stream's audio renditions, and which one is playing.
+   *
+   * Owned by the engine rather than chosen here, the same way the quality
+   * ladder is: hls.js reads them out of the master it loaded and the element
+   * knows its own tracks, and neither is something this component can work out
+   * for itself. Empty until whichever engine is playing says otherwise, which
+   * is most sources — see `onAudio` in `lib/player/source`.
+   */
+  const [audio, setAudio] = useState({ tracks: [], current: -1 });
 
   // --- subtitles ----------------------------------------------------------
   const [settings, setSettings] = useState(defaultSettings);
@@ -291,6 +303,7 @@ export default function VideoPlayer({
       type: sourceType,
       headers: latestSource.current?.headers,
       onEngine: setEngine,
+      onAudio: setAudio,
       onError: (cause) => {
         const nextIndex = sourceIndex + 1;
         if (nextIndex < sources.length) {
@@ -904,6 +917,14 @@ export default function VideoPlayer({
   // it cannot disagree with the list the captions menu is showing.
   const captionsLabel = (activeTrack === null ? null : tracks[activeTrack]?.label) ?? 'Captions';
 
+  // The audio button names the rendition that is playing, for the same reason
+  // the captions button names the track — and by the same route, read off the
+  // list the menu is showing rather than off a second piece of state that could
+  // disagree with it. The fallback is the engine reporting `-1`, which happens
+  // only in the moment between the list arriving and the first switch landing.
+  const audioLabel =
+    (audio.tracks.find((track) => track.id === audio.current)?.label) ?? 'Audio';
+
   /** Raises the rate for a hold, remembering what to come back to. */
   function holdStart() {
     if (!video || holdingRef.current) return;
@@ -1202,6 +1223,8 @@ export default function VideoPlayer({
         onToggleMute={toggleMute}
         captionsOn={activeTrack !== null}
         captionsLabel={captionsLabel}
+        audioTracks={audio.tracks}
+        audioLabel={audioLabel}
         showSources={providers.length > 1}
         sourceLabel={providers.find((provider) => provider.id === providerId)?.label ?? 'Source'}
         openMenu={menu}
@@ -1242,6 +1265,21 @@ export default function VideoPlayer({
           delay={delay}
           onDelay={setDelay}
           onCustomize={() => setMenu('settings')}
+          onClose={() => setMenu(null)}
+        />
+      )}
+
+      {menu === 'audio' && (
+        <AudioMenu
+          tracks={audio.tracks}
+          current={audio.current}
+          // The switch itself is the engine's; the menu closes and the new
+          // rendition reports itself back through `onAudio`, so the list, the
+          // button's name and the sound all move off one piece of state.
+          onSelect={(id) => {
+            sourceRef.current?.setAudioTrack(id);
+            setMenu(null);
+          }}
           onClose={() => setMenu(null)}
         />
       )}

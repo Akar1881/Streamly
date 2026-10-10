@@ -162,6 +162,28 @@ export default function useAudioSync({ video, cues, onApply }) {
   }, [finish]);
 
   /**
+   * What the panel shows while a session is running.
+   *
+   * Called on the same one-second beat as the estimate, and deliberately not
+   * from inside it. The first estimate is not ready for twenty seconds, and
+   * while this lived at the end of `recompute` — behind that gate — the panel
+   * sat on "0s in" for the whole of it. That does not read as a feature that is
+   * listening and has nothing yet; it reads as a feature that has not started.
+   *
+   * The offset holds its last good value rather than dropping back to zero when
+   * the correlation dips, for the same reason: the reading is a settled thing
+   * and the maths under it is not.
+   */
+  const publish = useCallback((running) => {
+    setState({
+      status: 'listening',
+      seconds: running.elapsed,
+      offset: running.lastShown?.offset ?? null,
+      score: running.latest?.score ?? 0,
+    });
+  }, []);
+
+  /**
    * Reads the audio and re-estimates, about once a second.
    *
    * Recomputing on a timer rather than every frame is not only about cost —
@@ -250,15 +272,10 @@ export default function useAudioSync({ video, cues, onApply }) {
 
     // While the score dips, the number on screen holds its last good value
     // rather than dropping to zero and climbing again: the reading is a settled
-    // thing and the correlation under it is not.
+    // thing and the correlation under it is not. Publishing is the caller's
+    // job — see `tick` — so that it happens whether or not there was an estimate
+    // to publish.
     if (running.latest) running.lastShown = running.latest;
-
-    setState({
-      status: 'listening',
-      seconds: running.elapsed,
-      offset: running.lastShown?.offset ?? null,
-      score: running.latest?.score ?? 0,
-    });
   }, [apply, finish]);
 
   /** One frame: sample the film, and every so often re-estimate. */
@@ -346,7 +363,14 @@ export default function useAudioSync({ video, cues, onApply }) {
     // interruption — and a suspended context measures nothing at all.
     resume(running.graph);
     recompute(running);
-  }, [recompute]);
+
+    // Still running: `recompute` may have finished the session or applied its
+    // answer, and either of those has already said its piece. This is the
+    // counter, and it moves from the first second rather than the twentieth —
+    // it is the only thing on the panel that tells the viewer anything is
+    // happening at all.
+    if (session.current === running) publish(running);
+  }, [publish, recompute]);
 
   /** Opens a session and starts listening. */
   const start = useCallback(() => {

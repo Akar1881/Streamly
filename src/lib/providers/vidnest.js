@@ -125,6 +125,7 @@ const SERVERS = [
     { path: 'moviebox', query: '' },
     { path: 'allmovies', query: '' },
     { path: 'catflix', query: '' },
+    { path: 'yflix', query: '' },
     { path: 'purstream', query: '' },
     { path: 'hollymoviehd', query: '' },
     { path: 'lamda', query: '' },

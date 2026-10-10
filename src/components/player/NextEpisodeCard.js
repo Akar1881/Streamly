@@ -28,6 +28,10 @@ import Icon from '@/components/ui/Icon';
  *  has to be the nearer of the two to the viewer's thumb, and only the player
  *  knows whether both are on screen.
  *
+ *  It is part of the chrome, unlike the skip button: it fades out with the rest
+ *  of the controls and comes back with them, which is why it takes `visible`
+ *  rather than deciding for itself.
+ *
  *  The still is a plain `<img>`, not `next/image`, for the reason the poster in
  *  `VideoPlayer` is: it is one image in a corner that is either there or not
  *  there, and it is drawn at a fixed size the browser can work out itself.
@@ -40,11 +44,15 @@ import Icon from '@/components/ui/Icon';
  * @param {string}  props.code         "S2E3"
  * @param {string}  props.title        the episode's name
  * @param {string}  [props.still]      its thumbnail, already a URL
+ * @param {boolean} [props.visible]    false once the chrome has auto-hidden
  * @param {() => void} props.onDismiss
  */
-export default function NextEpisodeCard({ href, code, title, still, onDismiss }) {
+export default function NextEpisodeCard({ href, code, title, still, visible = true, onDismiss }) {
   return (
-    <div className="pointer-events-auto relative">
+    <div
+      className={`relative transition-opacity duration-200
+        ${visible ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+    >
       <Link
         href={href}
         aria-label={`Next episode: ${code} ${title}`}

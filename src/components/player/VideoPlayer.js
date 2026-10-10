@@ -1204,10 +1204,16 @@ export default function VideoPlayer({
 
       {(offerNext || activeSegment) && (
         // The two offers share the corner because they are the same kind of
-        // thing — a way out of the part of the episode being watched — and the
-        // skip button is the nearer of the two to the bottom, where a thumb
-        // already is. Only the player knows whether both are on screen, so only
-        // the player can lay them out.
+        // thing — a way out of the part of the episode being watched. Only the
+        // player knows whether both are on screen, so only the player can lay
+        // them out.
+        //
+        // They differ in one respect: the skip button belongs to the picture and
+        // stays up whether or not the chrome is, while the next-episode card is
+        // part of the chrome and fades with it. That is also why the card comes
+        // *first* here — the last child owns the container's bottom edge, and
+        // with the card fading in place rather than leaving, the skip button
+        // must not drift up into the room it still takes.
         //
         // `bottom` is animated rather than fixed, because the bar hides itself
         // after a few idle seconds and the stack must not be left floating a
@@ -1217,11 +1223,15 @@ export default function VideoPlayer({
             px-3 transition-[bottom] duration-200 sm:px-4
             ${visible ? 'bottom-[4.5rem] sm:bottom-[4.75rem]' : 'bottom-3 sm:bottom-4'}`}
         >
-          {activeSegment && <SkipSegmentButton type={activeSegment} onSkip={skipSegment} />}
-
           {offerNext && (
-            <NextEpisodeCard {...nextEpisode} onDismiss={() => setNextDismissed(true)} />
+            <NextEpisodeCard
+              {...nextEpisode}
+              visible={visible}
+              onDismiss={() => setNextDismissed(true)}
+            />
           )}
+
+          {activeSegment && <SkipSegmentButton type={activeSegment} onSkip={skipSegment} />}
         </div>
       )}
 

@@ -35,13 +35,20 @@
  *      `403 {"error":"missing or invalid nonce"}` — which is exactly what the
  *      previous version of this file was calling "vidnest is down". It was
  *      never down; it was being asked without a nonce.
- *    - The app key is not a secret. It is a constant in vidnest.fun's own
- *      player bundle, where every visitor can read it, because it has to reach
- *      a browser for the browser to decrypt with. This being reproducible here
- *      is the same arrangement vidrock's key is in — see `vidrock.js` — and it
- *      is why the scheme is obfuscation: it keeps the URLs out of a plain
- *      `curl`, and does not keep them out of anyone who reads the page.
- *    - It stays in this file regardless, and this file is server-side only.
+ *    - The app key is not a secret. It lives in vidnest.fun's own player bundle,
+ *      where every visitor can read it, because it has to reach a browser for
+ *      the browser to decrypt with. This being reproducible here is the same
+ *      arrangement vidrock's key is in — see `vidrock.js` — and it is why the
+ *      scheme is obfuscation: it keeps the URLs out of a plain `curl`, and does
+ *      not keep them out of anyone who reads the page.
+ *    - They change it — daily, as far as this project can tell. A rotation is
+ *      invisible from here: the API still answers `200` with a well-formed
+ *      `{d, n, v: 2}`, every server's payload simply stops opening, and the
+ *      provider answers `null` with nothing in any log to say why. That is why
+ *      the key is not written down in this file any more. It is read from the
+ *      player bundle, verified against a real reply before it is trusted, and
+ *      held in memory until a reply stops opening with it — see `appKey` below.
+ *    - It stays server-side regardless, and so does the lookup that finds it.
  *      Nothing here is imported by a component and nothing is prefixed
  *      `NEXT_PUBLIC_`.
  *
@@ -92,14 +99,16 @@ const HEADERS = {
 };
 
 /**
- * The key the sealed replies are derived from — see the header.
+ * The same, for asking the site for a page rather than the API for JSON.
  *
- * Published in vidnest.fun's own bundle rather than guessed at, and public in
- * the same way that one is: it has to be, for a browser to decrypt with it. It
- * is here rather than in a `.env` because it is not a credential and pretending
- * otherwise would make it look like one that had been lost.
+ * Only `Accept` differs. The lookup pulls the site's own served HTML and its
+ * chunks, and asking for `application/json` while reading a page is the kind of
+ * mismatch that works until the day it does not.
  */
-const APP_KEY = 'wSnEvGgWkkxb7nO1yyFgMxhDvogX_Q7Dr0Fi1E4qvn0';
+const PAGE_HEADERS = {
+  ...HEADERS,
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+};
 
 /** How many random bytes a nonce is. Sixteen, as the client uses. */
 const NONCE_BYTES = 16;
@@ -128,14 +137,15 @@ function newNonce() {
 }
 
 /**
- * The key for one exchange, from the nonce the request carried.
+ * The key for one exchange, from the nonce the request carried and the app key.
  *
  * Per request rather than cached, because the nonce is what it is derived from
  * and every request has its own — eleven of these for a resolve, which is one
- * hash and one import each and not worth arranging around.
+ * hash and one import each and not worth arranging around. The app key, which
+ * is the part that is expensive to come by, is cached above this.
  */
-async function sealingKey(nonce) {
-  const material = new TextEncoder().encode(`${nonce}|${APP_KEY}`);
+async function sealingKey(nonce, appKey) {
+  const material = new TextEncoder().encode(`${nonce}|${appKey}`);
   const digest = await globalThis.crypto.subtle.digest('SHA-256', material);
   return globalThis.crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['decrypt']);
 }
@@ -147,17 +157,183 @@ async function sealingKey(nonce) {
  * shorter than an IV and a tag is not one at all, and the error `decrypt` raises
  * for it says nothing about which of the two things went wrong.
  */
-async function unseal(sealed, nonce) {
+async function unseal(sealed, nonce, appKey) {
   const bytes = fromBase64Url(sealed);
   if (bytes.length < IV_BYTES + 16) throw new Error('The sealed payload is too short to be one.');
 
   const plain = await globalThis.crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: bytes.subarray(0, IV_BYTES) },
-    await sealingKey(nonce),
+    await sealingKey(nonce, appKey),
     bytes.subarray(IV_BYTES),
   );
 
   return new TextDecoder().decode(plain);
+}
+
+/**
+ * The app key, and the lookup that finds it — see the header.
+ *
+ * `appKey` is process-wide, and that is the whole point of it: they rotate the
+ * key, and a rotation costs one lookup here rather than one per request. The
+ * first resolve that finds its reply sealed with an unfamiliar key pays for the
+ * discovery, and every resolve after it reads this. It is not written to disk —
+ * the lookup is a page fetch and a handful of chunks, once, and only after a
+ * rotation — and it is nulled the moment a reply stops opening with it.
+ *
+ * `keyLookup` holds the discovery while it is in flight so the eleven servers
+ * asked in parallel share one. Without it, a cold start would run eleven
+ * identical lookups and fetch the same page eleven times.
+ */
+let appKey = null;
+let keyLookup = null;
+
+/** How long the lookup gets. It runs inside the resolve's own five seconds. */
+const KEY_LOOKUP_TIMEOUT_MS = 4000;
+
+/**
+ * A page on the site that loads the chunk the key lives in.
+ *
+ * The key is not on the home page — its chunks carry the shared shell and
+ * nothing of the player — so the lookup has to open a title page, and the
+ * natural one is the title being resolved. That page can 404 for a title the
+ * site has and the API does not, and this is the fallback for that case rather
+ * than a guess: `324857` is the id the site's own bundle uses as its example,
+ * so it is about as safe as a hard-coded one gets.
+ */
+const KEY_PAGE_FALLBACK = '/movie/324857';
+
+/** The script the key is in, as it is named on the page that loads it. */
+const CHUNK_PATTERN = /\/_next\/static\/chunks\/[a-zA-Z0-9]+\.js/g;
+
+/**
+ * The key for a resolve, discovering one if this process has not seen one.
+ *
+ * `probe` is a reply that would not open — the sealed text and the nonce it
+ * wants — and it is what makes the lookup safe: a candidate is only accepted if
+ * it actually decrypts this reply. AES-GCM's tag means nothing else can, so a
+ * string picked up by mistake is not a key and is discarded rather than used.
+ */
+async function appKeyFor(probe, context) {
+  if (appKey) return appKey;
+
+  if (!keyLookup) {
+    keyLookup = discoverKey(probe, context)
+      .then((found) => {
+        if (found) appKey = found;
+        return found;
+      })
+      .finally(() => {
+        keyLookup = null;
+      });
+  }
+
+  return keyLookup;
+}
+
+/**
+ * The key, read off the site's player bundle.
+ *
+ * Every candidate is tested against the probe before it is believed, so this is
+ * allowed to be generous about what it collects and does not have to be right
+ * about what the bundle looks like — which matters, because the bundle is not
+ * ours and its shape can change without a rotation. Two things are tried, in
+ * order, and each is cheap enough to be worth the second only if the first
+ * fails:
+ *
+ *   1. The key by where it sits. In the bundle it is a string literal declared
+ *      immediately beside `"https://new.vidnest.fun"`, which is a stable enough
+ *      neighbourhood to look in. This is the normal path.
+ *   2. Every quoted string in the chunks. This is the path for when the bundle
+ *      is reshaped and the neighbourhood is gone. It collects far more
+ *      candidates than could possibly be keys, and that is fine: the probe
+ *      rejects all but one, and a rejected candidate costs a failed decrypt.
+ */
+async function discoverKey(probe, { tmdbId, mediaType, season, episode, signal }) {
+  if (!probe) return null;
+
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), KEY_LOOKUP_TIMEOUT_MS);
+  const forwardAbort = () => controller.abort();
+  signal?.addEventListener('abort', forwardAbort, { once: true });
+
+  try {
+    const titlePage =
+      mediaType === 'tv' ? `/tv/${tmdbId}/${season}/${episode}` : `/movie/${tmdbId}`;
+
+    for (const path of new Set([titlePage, KEY_PAGE_FALLBACK])) {
+      const sources = await chunksOf(path, controller.signal);
+      if (sources.length === 0) continue;
+
+      const likely = new Set();
+      for (const source of sources) {
+        for (const match of source.matchAll(
+          /"([A-Za-z0-9_-]{16,128})"\s*,\s*[A-Za-z_$][\w$]*\s*=\s*"https:\/\/new\.vidnest\.fun"/g,
+        )) {
+          likely.add(match[1]);
+        }
+      }
+      const key = await firstThatOpens([...likely], probe);
+      if (key) return key;
+
+      const everything = new Set();
+      for (const source of sources) {
+        for (const match of source.matchAll(/"([A-Za-z0-9_+/=-]{24,96})"/g)) everything.add(match[1]);
+      }
+      const swept = await firstThatOpens([...everything], probe);
+      if (swept) return swept;
+    }
+
+    return null;
+  } catch {
+    // A lookup that fails leaves `appKey` null, so the next resolve tries again.
+    return null;
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener('abort', forwardAbort);
+  }
+}
+
+/** The text of every chunk a page loads, or none if the page will not load. */
+async function chunksOf(path, signal) {
+  const page = await fetch(`${BASE_URL}${path}`, {
+    headers: PAGE_HEADERS,
+    cache: 'no-store',
+    signal,
+  });
+  if (!page.ok) return [];
+
+  const html = await page.text();
+  const chunks = [...new Set(html.match(CHUNK_PATTERN) ?? [])];
+
+  const sources = await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const response = await fetch(new URL(chunk, BASE_URL).href, {
+          headers: PAGE_HEADERS,
+          cache: 'no-store',
+          signal,
+        });
+        return response.ok ? await response.text() : '';
+      } catch {
+        return '';
+      }
+    }),
+  );
+
+  return sources.filter(Boolean);
+}
+
+/** The first of these strings that opens the probe, or null if none does. */
+async function firstThatOpens(candidates, probe) {
+  for (const candidate of candidates) {
+    try {
+      await unseal(probe.sealed, probe.nonce, candidate);
+      return candidate;
+    } catch {
+      /* not this one */
+    }
+  }
+  return null;
 }
 
 /**
@@ -374,7 +550,36 @@ export async function inspectVidnest({
       const reply = await response.json();
       if (reply?.v !== 2 || typeof reply.d !== 'string') return [];
 
-      return streamsFrom(JSON.parse(await unseal(reply.d, nonce)));
+      /**
+       * The nonce the reply names is the one to open with. It is the value we
+       * sent, echoed back, and the site decrypts with the echo rather than its
+       * own copy — so the reply is the authority and ours is the fallback for
+       * the day it stops echoing.
+       */
+      const openWith = typeof reply.n === 'string' ? reply.n : nonce;
+      const probe = { sealed: reply.d, nonce: openWith };
+
+      const context = { tmdbId, mediaType, season, episode, signal };
+      const key = await appKeyFor(probe, context);
+      if (!key) return [];
+
+      try {
+        return streamsFrom(JSON.parse(await unseal(reply.d, openWith, key)));
+      } catch {
+        /**
+         * A reply the held key will not open is a rotation, and it is the only
+         * signal one gives. Drop the key so the lookup runs again, and open this
+         * same reply with whatever it finds — the eleven servers asked together
+         * share the one discovery, and the ones whose replies this new key does
+         * open are recovered on this request rather than the next.
+         */
+        if (appKey === key) appKey = null;
+
+        const fresh = await appKeyFor(probe, context);
+        if (!fresh) return [];
+
+        return streamsFrom(JSON.parse(await unseal(reply.d, openWith, fresh)));
+      }
     } catch {
       return [];
     } finally {

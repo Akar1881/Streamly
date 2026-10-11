@@ -707,6 +707,20 @@ export default function VideoPlayer({
   // player: the delay the stepper sets, set the same way.
   const sync = useAudioSync({ video, cues, onApply: setDelay });
 
+  // The stepper and the automatic sync both write the delay, and they must not
+  // be confused for each other: a correction from the hook leaves the session
+  // running, while the viewer taking the delay by hand is the hook being
+  // overruled. So the menu's stepper goes through here, and only here — the
+  // session ends before the new value lands, so the machine cannot put its own
+  // answer back on the way out.
+  const nudgeDelay = useCallback(
+    (next) => {
+      sync.manualOverride();
+      setDelay(next);
+    },
+    [sync.manualOverride],
+  );
+
   /**
    * Everything the picture does in response to a pointer.
    *
@@ -1164,8 +1178,15 @@ export default function VideoPlayer({
         </div>
       )}
 
+      {/* Deliberately *below* the chrome rather than above it. It covers the
+          picture, the subtitles and the centre play button, which all have
+          nothing to say once there is no stream — but it must not cover the
+          control bar or the menus, because the one useful thing a viewer can do
+          here is pick a different source, and that is behind them. At `z-40` it
+          sat on top of both and took every press for itself: the bar was
+          visible through the dimming and completely dead to the touch. */}
       {error && (
-        <div className="absolute inset-0 z-40 grid place-items-center bg-black/85 px-6 text-center">
+        <div className="absolute inset-0 z-[25] grid place-items-center bg-black/85 px-6 text-center">
           <div className="max-w-sm">
             <Icon name="alert-circle" size={26} className="mx-auto text-white/70" />
             <p className="mt-2 text-sm font-medium text-white">
@@ -1183,17 +1204,38 @@ export default function VideoPlayer({
                 : site.player.unavailable.blocked.body}
             </p>
 
-            <a
-              href={site.player.unavailable.channel.href}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-flex items-center gap-1.5 rounded-[var(--radius-pill)]
-                border border-white/25 px-3 py-1.5 text-xs text-white/80 transition-colors
-                hover:text-white"
-            >
-              <Icon name="send" size={13} />
-              {site.player.unavailable.channel.label}
-            </a>
+            {/* The way out, next to the copy that asks for it rather than only
+                in the bar underneath. A viewer reading this is looking at a
+                source that will not play, and the thing they want is another
+                one — the Source button is not the obvious place to look for it
+                from here. Offered only when there is a second source to open;
+                on a page with one it would be a menu of one. */}
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {providers.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setMenu('sources')}
+                  className="inline-flex items-center gap-1.5 rounded-[var(--radius-pill)]
+                    bg-white px-3 py-1.5 text-xs font-medium text-black transition-colors
+                    hover:bg-white/90"
+                >
+                  <Icon name="cloud" size={13} />
+                  {site.player.unavailable.another}
+                </button>
+              )}
+
+              <a
+                href={site.player.unavailable.channel.href}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-[var(--radius-pill)]
+                  border border-white/25 px-3 py-1.5 text-xs text-white/80 transition-colors
+                  hover:text-white"
+              >
+                <Icon name="send" size={13} />
+                {site.player.unavailable.channel.label}
+              </a>
+            </div>
 
             {/* The engine's own words, kept for whoever has to work out why.
                 Small and dim: it is a fault message, not something to read. */}
@@ -1295,9 +1337,9 @@ export default function VideoPlayer({
             setMenu(null);
           }}
           delay={delay}
-          onDelay={setDelay}
+          onDelay={nudgeDelay}
           onSync={() => setMenu('sync')}
-          syncing={sync.status === 'listening'}
+          live={sync.status === 'live'}
           onCustomize={() => setMenu('settings')}
           onClose={() => setMenu(null)}
         />
@@ -1311,9 +1353,6 @@ export default function VideoPlayer({
           score={sync.score}
           onStart={sync.start}
           onStop={sync.stop}
-          // Only reached while listening: the session is deliberately not tied
-          // to whether this panel is mounted, so a run outlives the menu.
-          onCancel={sync.cancel}
           onBack={() => setMenu('captions')}
           onClose={() => setMenu(null)}
         />

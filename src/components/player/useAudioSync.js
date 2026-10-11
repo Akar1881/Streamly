@@ -15,7 +15,8 @@ import {
  * ============================================================================
  *  Everything that turns the pure solver in `sync.js` into something a viewer
  *  can press and watch: the listening, the accumulating, the deciding when to
- *  believe the answer.
+ *  believe the answer — and, once it has one, the deciding when to believe a new
+ *  one instead.
  *
  *  It is a hook rather than a few lines in the panel because a session outlives
  *  the panel. The viewer starts it, closes the panel and keeps watching; the
@@ -25,18 +26,40 @@ import {
  *
  *  ## The shape of a session
  *
- *  `idle → listening → done | unclear`
+ *  `idle → live → done | unclear`
  *
- *    - **listening** — an animation frame loop reading the film's loudness into
- *      a 50 ms bin per tick, keyed by the media clock. The last two minutes of
- *      those bins are correlated against the subtitle track about once a second.
- *    - **done** — the estimate was confident and stayed put for a few seconds,
- *      so it was applied, and listening stopped by itself. This is the normal
- *      ending; the viewer does not have to press anything.
- *    - **unclear** — it never found anything worth believing. Music, effects
- *      and silence carry no alignment information, and saying so is the whole
- *      point of the confidence score. The panel reports it instead of applying
- *      a guess.
+ *    - **live** — an animation frame loop reading the film's loudness into a
+ *      50 ms bin per tick, keyed by the media clock. The last two minutes of
+ *      those bins are correlated against the subtitle track, and the shift that
+ *      lines them up is applied. Then it keeps going: the window slides with the
+ *      film, the estimate is re-derived, and a fresh answer that disagrees with
+ *      the one in effect is applied in its turn.
+ *    - **done** — the viewer pressed Stop (or took the delay by hand). Listening
+ *      ended; whatever offset was in effect stays in effect.
+ *    - **unclear** — it was stopped before it ever found anything worth
+ *      believing. Music, effects and silence carry no alignment information,
+ *      and saying so is the whole point of the confidence score.
+ *
+ *  ## Why it runs continuously, and why that is not a cost paid for nothing
+ *
+ *  The solver asks an absolute question — where does the file sit against the
+ *  film — and builds the subtitle side of the comparison from the file's **own**
+ *  timings, never from the delay already in effect. So it is idempotent: run it
+ *  again over a later stretch of the same film and it returns the same answer,
+ *  and run it after a seek and it still returns the right one. That is what lets
+ *  a session stay up for the whole film, and it is why there is no second
+ *  algorithm here for "keep it in sync" — there is only the one, asked again.
+ *
+ *  What it buys is the two cases a single answer cannot survive. A file that
+ *  **drifts** is out by a different amount in the last act than in the first, and
+ *  a window that has slid to the last act measures the last act. And a first
+ *  answer that was confidently wrong — a stretch that happened to correlate —
+ *  is contradicted and replaced by the next window that disagrees.
+ *
+ *  The price is recomputing in the background for hours, which is why the cadence
+ *  below is not the one-second one it uses to converge: once an offset is in
+ *  effect it is re-derived every `RECHECK_SECONDS`, and immediately only after
+ *  something that invalidates it — a seek, or the track changing.
  *
  *  ## Why the bins are keyed by the media clock
  *
@@ -65,9 +88,6 @@ import {
 /** How much of the film is correlated at once. Longer is steadier and staler. */
 const WINDOW_SECONDS = 120;
 
-/** How long a listening session may run before it gives up and reports. */
-const MAX_SECONDS = 120;
-
 /**
  * How long the viewer must watch before an answer is worth offering at all.
  *
@@ -78,8 +98,32 @@ const MAX_SECONDS = 120;
  */
 const MIN_SECONDS = 20;
 
-/** How often the estimate is recomputed, in seconds listened. */
+/** How often the estimate is recomputed, in seconds listened, while converging. */
 const RECOMPUTE_EVERY = 1;
+
+/**
+ * How often it is recomputed once an offset is already in effect.
+ *
+ * The slow beat of the whole feature, and the one number that decides whether
+ * this is a background whisper or a tax. Fifteen seconds of film is far more
+ * than enough for a drifting file to move by the amount that matters, and it is
+ * about a fifteenth of the work of the converging cadence — which is what makes
+ * a session that runs for a three-hour film reasonable to leave on.
+ */
+const RECHECK_SECONDS = 15;
+
+/**
+ * How far a fresh estimate must differ from the one in effect before it is
+ * applied. Inside this, the two are the same answer arrived at twice.
+ */
+const REAPPLY_SECONDS = 0.25;
+
+/**
+ * A jump in the media clock this large is a seek rather than playback, and a
+ * seek is the one thing that makes the estimate in hand worth re-deriving now
+ * rather than on the next fifteen-second beat.
+ */
+const SEEK_SECONDS = 2;
 
 /**
  * The correlation below which the answer is noise rather than a match.
@@ -119,8 +163,8 @@ function round(value) {
  * @param {(offset: number) => void} props.onApply  given the delay to apply
  * @returns {{status: string, seconds: number, offset: number|null,
  *            score: number, start: () => void, stop: () => void,
- *            cancel: () => void}}
- *          `status` is `idle` | `listening` | `done` | `unclear` | `unsupported`.
+ *            manualOverride: () => void}}
+ *          `status` is `idle` | `live` | `done` | `unclear` | `unsupported`.
  *          `offset` is the live estimate while listening and the applied one
  *          afterwards; positive means the subtitles should appear later.
  */
@@ -149,26 +193,42 @@ export default function useAudioSync({ video, cues, onApply }) {
     return running;
   }, []);
 
-  /** Ends the session, having applied `answer`. */
+  /**
+   * Puts `answer` into effect, and keeps the session running.
+   *
+   * Not finishing here is the whole difference between this and a one-shot sync.
+   * The session has measured a shift and handed it over; it has not answered a
+   * question and closed. So the loop stays up, the window keeps sliding, and the
+   * next time the film has moved out from under this answer — a drift, a seek,
+   * or a first guess that was wrong — the machinery is already there to catch it.
+   *
+   * `settled` is cleared so the next correction has to earn its place the same
+   * way this one did, rather than being applied off the back of an estimate that
+   * has already been spent.
+   */
   const apply = useCallback((running, answer) => {
-    finish();
     latest.current.onApply?.(answer.offset);
+
+    running.appliedOffset = answer.offset;
+    running.forceCheck = false;
+    running.settled = null;
+
     setState({
-      status: 'done',
+      status: 'live',
       seconds: running.elapsed,
       offset: answer.offset,
       score: answer.score,
     });
-  }, [finish]);
+  }, []);
 
   /**
    * What the panel shows while a session is running.
    *
-   * Called on the same one-second beat as the estimate, and deliberately not
-   * from inside it. The first estimate is not ready for twenty seconds, and
-   * while this lived at the end of `recompute` — behind that gate — the panel
-   * sat on "0s in" for the whole of it. That does not read as a feature that is
-   * listening and has nothing yet; it reads as a feature that has not started.
+   * Called on the same beat as the estimate, and deliberately not from inside
+   * it. The first estimate is not ready for twenty seconds, and while this lived
+   * at the end of `recompute` — behind that gate — the panel sat on "0s in" for
+   * the whole of it. That does not read as a feature that is listening and has
+   * nothing yet; it reads as a feature that has not started.
    *
    * The offset holds its last good value rather than dropping back to zero when
    * the correlation dips, for the same reason: the reading is a settled thing
@@ -176,17 +236,18 @@ export default function useAudioSync({ video, cues, onApply }) {
    */
   const publish = useCallback((running) => {
     setState({
-      status: 'listening',
+      status: 'live',
       seconds: running.elapsed,
-      offset: running.lastShown?.offset ?? null,
+      offset: running.appliedOffset ?? running.lastShown?.offset ?? null,
       score: running.latest?.score ?? 0,
     });
   }, []);
 
   /**
-   * Reads the audio and re-estimates, about once a second.
+   * Reads the audio and re-estimates, about once a second while converging and
+   * every `RECHECK_SECONDS` once something is in effect.
    *
-   * Recomputing on a timer rather than every frame is not only about cost —
+   * Recomputing on a beat rather than every frame is not only about cost —
    * though it is mostly about cost, since it is a few hundred correlations on
    * the main thread and the viewer is watching a film. It is also that the
    * answer barely moves between one second and the next, and a number that
@@ -196,12 +257,17 @@ export default function useAudioSync({ video, cues, onApply }) {
     const { cues: track } = latest.current;
 
     // Nothing to line up against — the track was turned off under a running
-    // session, or the file parsed to nothing. Continuing to listen would be
-    // listening with nothing to compare against, so the session ends and says
-    // so rather than running out its own clock first.
+    // session, or the file parsed to nothing. A live session has no answer to
+    // give with nothing to compare against, so it ends and says what it had.
     if (!track?.length) {
+      const had = running.appliedOffset;
       finish();
-      setState({ status: 'unclear', seconds: running.elapsed, offset: null, score: 0 });
+      setState({
+        status: had == null ? 'unclear' : 'done',
+        seconds: running.elapsed,
+        offset: had ?? null,
+        score: running.latest?.score ?? 0,
+      });
       return;
     }
 
@@ -253,21 +319,17 @@ export default function useAudioSync({ video, cues, onApply }) {
     const held = typeof since === 'number' && running.elapsed - since >= STEADY_SECONDS;
 
     if (held) {
-      apply(running, running.latest);
-      return;
-    }
-
-    // Long enough to be worth listening for, and it still has not settled. If
-    // there is anything in hand it is handed over rather than thrown away — the
-    // viewer has spent two minutes of their film on this — and if there is not,
-    // that is the answer.
-    if (running.elapsed >= MAX_SECONDS) {
-      if (running.latest) apply(running, running.latest);
-      else {
-        finish();
-        setState({ status: 'unclear', seconds: running.elapsed, offset: null, score: 0 });
+      // A settled answer is only worth applying if it is a *new* answer. While
+      // it agrees with the offset already in effect — which is the common case
+      // in the steady state of a well-timed film — there is nothing to do, and
+      // re-applying the same number every fifteen seconds would only re-key the
+      // overlay for no reason.
+      const applied = running.appliedOffset;
+      if (applied == null || Math.abs(running.latest.offset - applied) > REAPPLY_SECONDS) {
+        apply(running, running.latest);
+        return;
       }
-      return;
+      running.settled = null;
     }
 
     // While the score dips, the number on screen holds its last good value
@@ -301,12 +363,29 @@ export default function useAudioSync({ video, cues, onApply }) {
     // off how much new ground was covered. A viewer who seeks backwards is
     // re-listening to bins that are already filled, and a session whose
     // progress only advanced on new ground would sit frozen for the rest of the
-    // run — never reaching its own time limit, never re-estimating.
+    // run.
     //
     // Capped per tick, so a seek is not counted as an hour of listening.
     const delta = at - running.lastAt;
     running.lastAt = at;
     if (delta > 0) running.elapsed += Math.min(delta, RECOMPUTE_EVERY);
+
+    // A jump this large is the viewer moving through the film, not the film
+    // advancing. The window will fill with the new stretch and the next estimate
+    // will be of *that* stretch, so it is worth having now rather than in
+    // fifteen seconds — it is the difference between a corrected subtitle and a
+    // wrong one across the whole of the scene after a jump.
+    if (Math.abs(delta) > SEEK_SECONDS) running.forceCheck = true;
+
+    // A different track is a different question — its own timings, its own
+    // offset — so the settled estimate is dropped and the next one is derived
+    // at once. The audio already gathered is kept: it is still this film.
+    const { cues: track } = latest.current;
+    if (track !== running.cuesSeen) {
+      running.cuesSeen = track;
+      running.settled = null;
+      running.forceCheck = true;
+    }
 
     let index = Math.floor((at - running.origin) / BIN_SECONDS);
 
@@ -318,6 +397,9 @@ export default function useAudioSync({ video, cues, onApply }) {
         // is not the same stretch of film as where the viewer now is, so it is
         // dropped rather than carried across, and the session starts again from
         // here — which the counting above then reports honestly as a restart.
+        // The applied offset is deliberately *not* cleared: it is a property of
+        // the file, not of this stretch of film, and the subtitles stay where
+        // they were while the new stretch is measured.
         running.bins.fill(0);
         running.mask.fill(0);
         running.counts.fill(0);
@@ -328,6 +410,7 @@ export default function useAudioSync({ video, cues, onApply }) {
         running.latest = null;
         running.lastShown = null;
         running.settled = null;
+        running.forceCheck = true;
         index = 0;
       } else {
         // The ring is full: drop the oldest half and slide the origin up to it.
@@ -356,7 +439,11 @@ export default function useAudioSync({ video, cues, onApply }) {
 
     if (index + 1 > running.filled) running.filled = index + 1;
 
-    if (running.elapsed - running.lastCheck < RECOMPUTE_EVERY) return;
+    // One offset in effect is a settled thing and needs only a slow second look;
+    // converging needs the fast one. A seek or a track change overrides both.
+    const cadence = running.appliedOffset == null ? RECOMPUTE_EVERY : RECHECK_SECONDS;
+    if (!running.forceCheck && running.elapsed - running.lastCheck < cadence) return;
+    running.forceCheck = false;
     running.lastCheck = running.elapsed;
 
     // A context can be suspended under us — a backgrounded tab, an audio
@@ -364,17 +451,16 @@ export default function useAudioSync({ video, cues, onApply }) {
     resume(running.graph);
     recompute(running);
 
-    // Still running: `recompute` may have finished the session or applied its
-    // answer, and either of those has already said its piece. This is the
-    // counter, and it moves from the first second rather than the twentieth —
-    // it is the only thing on the panel that tells the viewer anything is
-    // happening at all.
+    // Still running: `recompute` may have ended the session, and that has
+    // already said its piece. This is the counter, and it moves from the first
+    // second rather than the twentieth — it is the only thing on the panel that
+    // tells the viewer anything is happening at all.
     if (session.current === running) publish(running);
   }, [publish, recompute]);
 
   /** Opens a session and starts listening. */
   const start = useCallback(() => {
-    const { video: element } = latest.current;
+    const { video: element, cues: track } = latest.current;
     if (!element) return;
 
     finish();
@@ -405,49 +491,55 @@ export default function useAudioSync({ video, cues, onApply }) {
       latest: null,
       lastShown: null,
       settled: null,
+      appliedOffset: null,
+      cuesSeen: track,
+      forceCheck: true,
     };
 
-    setState({ status: 'listening', seconds: 0, offset: null, score: 0 });
+    setState({ status: 'live', seconds: 0, offset: null, score: 0 });
     tick(session.current);
   }, [finish, tick]);
 
   /**
-   * Ends the session, applying the best estimate if there is one worth applying.
+   * Ends the session, leaving the offset that is in effect right where it is.
    *
-   * Stopping is not cancelling: a viewer who presses Stop has listened for as
-   * long as they intend to and wants what was found. It is only refused when
-   * what was found was too weak to be worth moving the subtitles for — in which
-   * case saying so is more use than applying it.
+   * Stopping is not undoing. The viewer who presses Stop has listened for as
+   * long as they intend to and the subtitles are already where the feature put
+   * them; if it never found anything to put them anywhere, that is said rather
+   * than shown as a zero offset that was never applied.
    */
   const stop = useCallback(() => {
     const running = finish();
     if (!running) return;
 
-    if (running.latest && running.elapsed >= MIN_SECONDS) {
-      apply(running, running.latest);
-      return;
-    }
-
+    const applied = running.appliedOffset;
     setState({
-      status: 'unclear',
+      status: applied == null ? 'unclear' : 'done',
       seconds: running.elapsed,
-      offset: null,
+      offset: applied ?? null,
       score: running.latest?.score ?? 0,
     });
-  }, [apply, finish]);
+  }, [finish]);
 
   /**
-   * Ends the session and throws the estimate away.
+   * Ends the session because the viewer has taken the delay by hand.
    *
-   * Deliberately not what closing the panel does — a run outlives the panel on
-   * purpose, so that starting it does not mean sitting and watching a number
-   * instead of the film. This is the viewer saying no to a run that is going
-   * badly, and it is the only way to get back to `idle` without applying
-   * something.
+   * Deliberately silent, and deliberately not a correction: the stepper is the
+   * viewer overruling the machine, and the one thing that must not happen is the
+   * machine applying its own answer on the way out. Left at `done` when an
+   * offset was in effect, because one still is; left at `idle` when none was,
+   * because nothing happened worth reporting.
    */
-  const cancel = useCallback(() => {
-    if (!finish()) return;
-    setState({ status: 'idle', seconds: 0, offset: null, score: 0 });
+  const manualOverride = useCallback(() => {
+    const running = finish();
+    if (!running) return;
+
+    const applied = running.appliedOffset;
+    setState(
+      applied == null
+        ? { status: 'idle', seconds: 0, offset: null, score: 0 }
+        : { status: 'done', seconds: running.elapsed, offset: applied, score: running.latest?.score ?? 0 },
+    );
   }, [finish]);
 
   // A session that is still listening when the player goes away would keep an
@@ -455,5 +547,16 @@ export default function useAudioSync({ video, cues, onApply }) {
   // deliberately not torn down — it belongs to the element, and it cannot be.
   useEffect(() => finish, [finish]);
 
-  return { ...state, start, stop, cancel };
+  // The same is true of the element being replaced under a running session: the
+  // loop would go on reading a node nobody is watching any more. Ended rather
+  // than carried over, because the offset is a property of the file that was
+  // playing on the element that is gone.
+  const elementSeen = useRef(video);
+  useEffect(() => {
+    if (elementSeen.current === video) return;
+    elementSeen.current = video;
+    if (finish()) setState({ status: 'idle', seconds: 0, offset: null, score: 0 });
+  }, [video, finish]);
+
+  return { ...state, start, stop, manualOverride };
 }

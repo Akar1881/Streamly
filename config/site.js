@@ -438,13 +438,19 @@ const site = {
      * All three end on the channel link. "When will it be back" is the question
      * this copy cannot answer, and on a site whose sources are what they are,
      * that question comes up often enough to be worth answering in one place.
+     *
+     * All three also name the other source as the first thing to try, because it
+     * is the one that actually works: a second source is a different host, a
+     * different encode and a different set of stream URLs, so a title one of
+     * them will not play is very often a title the next one will. "Try again"
+     * asks the viewer to wait on the same source that just said no.
      */
     unavailable: {
       failed: {
         title: 'This source failed',
         body:
-          'Sorry — the source did not respond. That is usually temporary, so try again, or ' +
-          'come back later.',
+          'Sorry — the source did not respond. Try a different source, or try this one again ' +
+          'in a moment.',
       },
       missing: {
         title: 'Source not available',
@@ -452,7 +458,9 @@ const site = {
       },
       dropped: {
         title: 'This stream stopped playing',
-        body: 'Sorry — the stream dropped and could not be recovered. Try again, or come back later.',
+        body:
+          'Sorry — the stream dropped and could not be recovered. Try a different source, ' +
+          'or come back later.',
       },
       /**
        * The source said no before a single frame was shown.
@@ -464,8 +472,8 @@ const site = {
       blocked: {
         title: 'Cannot stream this right now',
         body:
-          'Sorry — this source will not play this title at the moment. Try again, or come ' +
-          'back later.',
+          'Sorry — this source will not play this title at the moment. Try a different ' +
+          'source, or come back later.',
       },
       /** The link under all of them, and the label on the retry button. */
       channel: {
@@ -473,6 +481,8 @@ const site = {
         href: 'https://t.me/streamly_akar1881',
       },
       retry: 'Try again',
+      /** The button in the error card that opens the source list, when there is one. */
+      another: 'Try a different source',
     },
 
     /**

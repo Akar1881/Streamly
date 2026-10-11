@@ -12,13 +12,19 @@ import PlayerMenu from '@/components/player/PlayerMenu';
  *  It is a view of `useAudioSync` and holds nothing of its own — the session
  *  outlives the panel on purpose, so the viewer can start it, close the panel
  *  and keep watching while the subtitles correct themselves. Closing therefore
- *  does *not* stop it; the button does, and Cancel is the way to abandon a run.
+ *  does *not* stop it; the button does.
  *
  *  The reading is the point of the panel, so it is the largest thing in it. A
- *  live number that walks towards a value and stops is how the viewer can tell
- *  the feature is working rather than waiting on faith — and it is why the value
- *  holds steady when the correlation dips instead of dropping to zero and
- *  climbing back, which would read as a feature that had lost its place.
+ *  live number that walks towards a value and then *stays* there is how the
+ *  viewer can tell the feature is working rather than waiting on faith — and it
+ *  is why the value holds steady when the correlation dips instead of dropping
+ *  to zero and climbing back, which would read as a feature that had lost its
+ *  place.
+ *
+ *  One button, because there is one thing to say. Start it and it listens for as
+ *  long as the viewer is watching; stop it and the subtitles stay where it left
+ *  them. There is no "apply" to press at the end, because it never waited until
+ *  the end to apply anything.
  * ============================================================================
  */
 
@@ -44,18 +50,20 @@ function Badge({ live }) {
 }
 
 /** What the panel says under the reading, given where the session is. */
-function message(status, seconds, score) {
+function message(status, seconds, offset, score) {
   switch (status) {
-    case 'listening':
-      // The percentage is the correlation, not a progress bar, and it is shown
-      // as words rather than a number: "0.62" invites the viewer to read a
-      // precision into it that a heuristic does not have.
+    case 'live':
+      // Two things a live session can be saying: still looking, or looking and
+      // holding. The percentage is the correlation, not a progress bar, and it
+      // is shown as words rather than a number — "0.62" invites the viewer to
+      // read a precision into it that a heuristic does not have.
+      if (offset != null) return `Live — keeping the subtitles in sync. ${Math.round(seconds)}s in.`;
       if (score >= 0.6) return `Listening — that sounds like a match. ${Math.round(seconds)}s in.`;
       if (score >= 0.35) return `Listening — getting there. ${Math.round(seconds)}s in.`;
       return `Listening to the audio. ${Math.round(seconds)}s in.`;
 
     case 'done':
-      return 'Applied. The subtitles have been moved to match.';
+      return 'Stopped. The subtitles are being held at the offset above.';
 
     case 'unclear':
       return 'Could not tell from that. Try starting it over a stretch where somebody is talking.';
@@ -64,7 +72,7 @@ function message(status, seconds, score) {
       return 'This browser will not let the player listen to its own audio.';
 
     default:
-      return 'Listens to the audio and works out the subtitle delay for you.';
+      return 'Listens to the audio and keeps the subtitle delay right for the whole film.';
   }
 }
 
@@ -76,7 +84,6 @@ function message(status, seconds, score) {
  * @param {number} props.score
  * @param {() => void} props.onStart
  * @param {() => void} props.onStop
- * @param {() => void} props.onCancel
  * @param {() => void} props.onBack
  * @param {() => void} props.onClose
  */
@@ -87,11 +94,10 @@ export default function SyncToAudioPanel({
   score,
   onStart,
   onStop,
-  onCancel,
   onBack,
   onClose,
 }) {
-  const listening = status === 'listening';
+  const live = status === 'live';
   const unsupported = status === 'unsupported';
 
   return (
@@ -104,7 +110,7 @@ export default function SyncToAudioPanel({
           <button
             type="button"
             disabled={unsupported}
-            onClick={listening ? onStop : onStart}
+            onClick={live ? onStop : onStart}
             className={`h-9 w-full rounded-[var(--radius-button)] text-sm font-medium transition-colors
               sm:h-10
               ${
@@ -115,8 +121,8 @@ export default function SyncToAudioPanel({
           >
             {unsupported
               ? 'Unavailable'
-              : listening
-                ? 'Stop & apply'
+              : live
+                ? 'Stop'
                 : status === 'idle'
                   ? 'Start sync'
                   : 'Sync again'}
@@ -126,13 +132,13 @@ export default function SyncToAudioPanel({
     >
       <div className="px-3 pb-2.5 pt-3 text-center sm:px-4 sm:pb-3 sm:pt-4">
         <div className="flex justify-center">
-          <Badge live={listening} />
+          <Badge live={live} />
         </div>
 
         <h3 className="mt-2 text-sm font-semibold text-white sm:mt-3">Sync to audio</h3>
 
         <p className="mx-auto mt-1 max-w-[15rem] text-[11px] leading-snug text-white/55 sm:text-xs">
-          {message(status, seconds, score)}
+          {message(status, seconds, offset, score)}
         </p>
 
         <div className="mt-3 sm:mt-4">
@@ -144,17 +150,6 @@ export default function SyncToAudioPanel({
             Subtitle offset
           </p>
         </div>
-
-        {listening && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="mt-3 text-xs text-white/50 underline-offset-2 transition-colors
-              hover:text-white/80 hover:underline sm:mt-4"
-          >
-            Cancel
-          </button>
-        )}
       </div>
     </PlayerMenu>
   );

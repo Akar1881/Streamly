@@ -36,7 +36,7 @@ const LIMIT = 30;
  * @param {number} props.delay             seconds, positive means subtitles later
  * @param {(delay: number) => void} props.onDelay
  * @param {() => void} props.onSync
- * @param {boolean} props.syncing          whether a sync run is under way
+ * @param {boolean} props.live            whether a sync session is running
  * @param {() => void} props.onCustomize
  * @param {() => void} props.onClose
  */
@@ -47,7 +47,7 @@ export default function CaptionsMenu({
   delay,
   onDelay,
   onSync,
-  syncing = false,
+  live = false,
   onCustomize,
   onClose,
 }) {
@@ -73,13 +73,13 @@ export default function CaptionsMenu({
       {tracks.length === 0 && <MenuNote>No subtitles available for this stream.</MenuNote>}
 
       {/* Above the divider with the tracks it corrects, and above the stepper
-          that does the same job by hand. The trailing text reports a run that is
-          still going, because a session deliberately outlives this menu being
-          closed and the row is then the only sign of it. */}
+          that does the same job by hand. The trailing text reports a session
+          that is still running, because a session deliberately outlives this
+          menu being closed and the row is then the only sign of it. */}
       {tracks.length > 0 && (
         <MenuRow
           label="Sync to audio"
-          trailing={syncing ? 'Listening' : 'Automatic'}
+          trailing={live ? 'Live' : 'Automatic'}
           onClick={onSync}
         />
       )}

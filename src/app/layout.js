@@ -1,4 +1,5 @@
 import { Outfit } from 'next/font/google';
+import localFont from 'next/font/local';
 import site from '@config/site';
 import { themeCss, themeInitScript } from '@/lib/theme';
 import AppShell from '@/components/layout/AppShell';
@@ -19,6 +20,25 @@ const brandFont = Outfit({
   weight: ['400', '500', '600', '700'],
   variable: '--font-brand',
   display: 'swap',
+});
+
+/**
+ * The Kurdish subtitle face, bundled rather than fetched.
+ *
+ * NRT is chosen for the Sorani track and is not on Google Fonts, so it is a file
+ * in `./fonts/` served by this site. It is offered as a subtitle font in
+ * `player.subtitleStyle.fonts` and nowhere else, so it is not preloaded: an
+ * `@font-face` is only fetched when something on the page actually uses it, and
+ * only a viewer who picks it ever does. The file is the Bold cut, which is why
+ * the weight below is `700` rather than a range.
+ */
+const kurdishFont = localFont({
+  src: './fonts/NRT-Bd.ttf',
+  weight: '700',
+  style: 'normal',
+  display: 'swap',
+  variable: '--font-nrt',
+  preload: false,
 });
 
 /**
@@ -135,7 +155,7 @@ export default function RootLayout({ children }) {
       lang={site.tmdb.language.split('-')[0]}
       data-theme={site.theme.defaultMode}
       data-scroll-behavior="smooth"
-      className={brandFont.variable}
+      className={`${brandFont.variable} ${kurdishFont.variable}`}
       suppressHydrationWarning
     >
       <head>

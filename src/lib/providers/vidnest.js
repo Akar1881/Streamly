@@ -37,10 +37,9 @@
  *      never down; it was being asked without a nonce.
  *    - The app key is not a secret. It lives in vidnest.fun's own player bundle,
  *      where every visitor can read it, because it has to reach a browser for
- *      the browser to decrypt with. This being reproducible here is the same
- *      arrangement vidrock's key is in — see `vidrock.js` — and it is why the
- *      scheme is obfuscation: it keeps the URLs out of a plain `curl`, and does
- *      not keep them out of anyone who reads the page.
+ *      the browser to decrypt with. That is why the scheme is obfuscation rather
+ *      than secrecy: it keeps the URLs out of a plain `curl`, and does not keep
+ *      them out of anyone who reads the page.
  *    - They change it — daily, as far as this project can tell. A rotation is
  *      invisible from here: the API still answers `200` with a well-formed
  *      `{d, n, v: 2}`, every server's payload simply stops opening, and the

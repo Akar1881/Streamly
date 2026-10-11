@@ -373,7 +373,7 @@ const site = {
      * **Empty is a valid state.** With nothing listed the watch pages say no
      * source is configured rather than showing a player that cannot play.
      */
-    providers: ['videasy', 'vidnest', 'vidrock', 'vidplay'],
+    providers: ['videasy', 'vidnest', 'vidplay'],
     /** Start playing as soon as the page opens. */
     autoplay: true,
     /** Offer a "Next episode" button on TV playback pages. */
@@ -519,6 +519,9 @@ const site = {
         /**
          * The Kurdish track is the reason this list exists: Outfit has no
          * Arabic-script glyphs, so a Sorani viewer needs a stack that does.
+         * Naskh leans on faces that may already be installed; NRT is bundled
+         * with the site — `src/app/layout.js` loads it as `--font-nrt` — so it
+         * renders the same for everyone, which no system stack can promise.
          */
         fonts: [
           { value: 'brand', label: 'Outfit', stack: 'var(--font-brand), system-ui, sans-serif' },
@@ -527,6 +530,11 @@ const site = {
             value: 'naskh',
             label: 'Naskh (Kurdish)',
             stack: "'Noto Naskh Arabic', 'Segoe UI', Tahoma, system-ui, sans-serif",
+          },
+          {
+            value: 'nrt',
+            label: 'NRT Bold (Kurdish)',
+            stack: "var(--font-nrt), 'Noto Naskh Arabic', Tahoma, system-ui, sans-serif",
           },
         ],
         sizes: [

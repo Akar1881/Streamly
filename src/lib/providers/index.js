@@ -105,7 +105,6 @@ import site from '@config/site';
 import videasy from './videasy-provider';
 import vidnest from './vidnest-provider';
 import vidplay from './vidplay-provider';
-import vidrock from './vidrock-provider';
 import { measureStream } from './quality';
 
 /**
@@ -115,7 +114,7 @@ import { measureStream } from './quality';
  * listed in `config/site.js` with no module here is skipped rather than
  * crashing the watch page, so a typo costs a switcher entry, not the site.
  */
-const PROVIDERS = { videasy, vidnest, vidrock, vidplay };
+const PROVIDERS = { videasy, vidnest, vidplay };
 
 /**
  * What to call a provider that has no `label`.

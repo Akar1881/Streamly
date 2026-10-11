@@ -83,19 +83,33 @@ const API_BASE_URL = 'https://vidrock.net';
 const SERVER = 'Atlas';
 
 /**
- * The headers the API wants.
+ * The headers the API is asked with, as close to a browser's as they can be
+ * made from a function.
  *
- * `Referer` and `Origin` are the two that matter — measured, not guessed: with
- * either one the API answers 200, and without both it answers 403. The rest is
- * what a browser would send from the player page.
+ * `Referer` and `Origin` were once load-bearing — measured, either one of them
+ * turned a 403 into a 200 — and they are sent still, though the API answers
+ * without them now. What the rest of the set is for is the other gate:
+ * Cloudflare in front of `vidrock.net` answers 403 to the datacenter addresses
+ * a serverless host egresses from, and a request carrying a browser's
+ * `sec-ch-ua`/`sec-fetch-*` fingerprint is the lever a function has against it.
+ * The `User-Agent` and `sec-ch-ua` versions are written from one constant
+ * because a pair that disagrees is itself the kind of tell this is trying to
+ * avoid.
  */
+const CHROME_MAJOR = '155';
+
 const HEADERS = {
   Accept: 'application/json, text/javascript, */*; q=0.01',
   'Accept-Language': 'en-US,en;q=0.9',
   Referer: `${API_BASE_URL}/`,
   Origin: API_BASE_URL,
-  'User-Agent':
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36',
+  'User-Agent': `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`,
+  'sec-ch-ua': `"Google Chrome";v="${CHROME_MAJOR}", "Chromium";v="${CHROME_MAJOR}", "Not(A:Brand";v="24"`,
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"Linux"',
+  'Sec-Fetch-Dest': 'empty',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Site': 'same-origin',
 };
 
 /**

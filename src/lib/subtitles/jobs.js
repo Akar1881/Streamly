@@ -25,6 +25,7 @@ import { fetchProviderSubtitle } from './provider';
 import { parseSubtitle, toVtt } from './srt';
 import { translateCues, translateKey } from './translate';
 import { fetchSourceSubtitle, findSource } from './wyzie';
+import { fetchOpenSubtitle, findOpenSubtitle } from './opensubtitles';
 import { fetchVideasySubtitle } from '@/lib/providers/videasy-captions';
 
 /**
@@ -120,7 +121,7 @@ function run(job, request) {
   // The job may outlive the request that started it (that is the point of the
   // timeout below), so it updates the record rather than returning a value.
   const work = (async () => {
-    // Three sources, best first, and the order is the whole of the policy.
+    // Four sources, best first, and the order is the whole of the policy.
     //
     // The provider's own subtitle leads, because it was shipped with the copy of
     // the film the viewer is watching and so its timings match the picture. It is
@@ -128,11 +129,12 @@ function run(job, request) {
     // is timed to some other release, and on a film re-cut between regions it is
     // timed to some other film.
     //
-    // Wyzie is next, and it is the one that hands back a link the player can use
-    // — the same file it gives us to translate becomes the original-language
-    // track. Videasy's HLS caption is the last resort: a better timing match than
-    // the provider's when it exists, but it only ever exists as bytes on this
-    // side, so it has no link to hand out and it costs a whole second lookup.
+    // Wyzie is next, followed by OpenSubtitles if Wyzie cannot provide a usable
+    // file. Both hand back a link the player can use — the same file it gives us
+    // to translate becomes the original-language track. Videasy's HLS caption
+    // is the last resort: a better timing match than a separate subtitle when it
+    // exists, but it only ever exists as bytes on this side, so it has no link to
+    // hand out and it costs a whole second lookup.
     //
     // Each call is guarded rather than chained with `??` because Wyzie *throws*
     // on a quota cap or a missing key — a `??` would never be reached, and a
@@ -154,9 +156,26 @@ function run(job, request) {
     if (!source) {
       try {
         source = await fetchSourceSubtitle(request);
+        if (!parseSubtitle(source.vtt).length) {
+          throw new SubtitleError('Wyzie returned no readable cues', 'fetch-failed');
+        }
       } catch (error) {
         if (error?.name === 'AbortError') throw error;
         sourceError = sourceError ?? error;
+        source = null;
+      }
+    }
+
+    if (!source) {
+      try {
+        source = await fetchOpenSubtitle(request);
+        if (!parseSubtitle(source.vtt).length) {
+          throw new SubtitleError('OpenSubtitles returned no readable cues', 'fetch-failed');
+        }
+      } catch (error) {
+        if (error?.name === 'AbortError') throw error;
+        sourceError = sourceError ?? error;
+        source = null;
       }
     }
 
@@ -362,6 +381,7 @@ export async function sourceLink(job, request) {
   if (job.status === 'working') return null;
 
   const search = findSource(request)
+    .catch(() => findOpenSubtitle(request))
     .then((found) => found.url)
     .catch((error) => {
       // "No English subtitle exists for this title" is an answer, and a stable

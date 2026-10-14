@@ -109,6 +109,26 @@ export default {
   id: 'himovies',
   label: CODENAME,
 
+  /**
+   * Ten seconds, against the shared five.
+   *
+   * Not a claim that this is slow — a statement that it is a different shape.
+   * The shared deadline in `src/lib/providers/index.js` is sized for a provider
+   * whose answer is one HTTP request and a manifest probe. This one is two round
+   * trips to our own route with a redirect followed in the browser between them,
+   * and in production that second hop is not a shortcut but the only way to an
+   * answer at all. Run under the shared figure it loses the race to its own
+   * deadline, and a lost race here is indistinguishable from "this source does
+   * not have the title" — which is exactly the wrong thing to tell a viewer
+   * about the source that is supposed to win.
+   *
+   * The number is not tuned to a measurement; it is double the worst case this
+   * path can accumulate warm, which leaves room for a cold start in the middle.
+   * If Main ever starts losing to this too, the fix is to shorten the path, not
+   * to add to the budget again.
+   */
+  timeoutMs: 10_000,
+
   async resolve({ mediaType, tmdbId, imdbId, season, episode, signal }) {
     /** One attempt, with or without the address a browser resolved for us. */
     async function ask(extra) {

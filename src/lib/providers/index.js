@@ -55,6 +55,25 @@
  *  `player.unavailable`, so they are read by us and not by a viewer.
  *
  *  ---------------------------------------------------------------------------
+ *  How long a provider gets to answer
+ *  ---------------------------------------------------------------------------
+ *
+ *  Every provider is asked under one deadline — `COMPARE_TIMEOUT_MS` below — and
+ *  a provider whose lookup is genuinely a different *shape* rather than merely a
+ *  slow one states its own as `timeoutMs`.
+ *
+ *  That is not a tuning knob, and it should not become one. The deadline is the
+ *  only thing standing between a source that has stopped answering and a watch
+ *  page that never starts, and widening it for everyone to accommodate one
+ *  provider trades that protection for all of them. A provider asking for longer
+ *  should be able to say, in a sentence, why its answer cannot arrive in the
+ *  shared time — as the Main provider does.
+ *
+ *  What it costs is on the page, not just in the fuse: every provider is awaited
+ *  before anything is chosen, so a longer budget is a longer worst case before
+ *  the fallback plays.
+ *
+ *  ---------------------------------------------------------------------------
  *  What `resolve` is given, and what it returns
  *  ---------------------------------------------------------------------------
  *
@@ -144,7 +163,10 @@ export function listProviders() {
   return site.player.providers
     .map((id) => PROVIDERS[id])
     .filter(Boolean)
-    .map(({ id, label }) => ({ id, label: label ?? fallbackLabel(id) }));
+    // `timeoutMs` rides along for the few providers that state one. It is
+    // undefined for everyone else, which is what makes the shared deadline below
+    // the default rather than a figure each provider has to repeat.
+    .map(({ id, label, timeoutMs }) => ({ id, label: label ?? fallbackLabel(id), timeoutMs }));
 }
 
 /** The module behind an id, or undefined if nothing is registered for it. */
@@ -216,12 +238,20 @@ export async function resolvePlayback({
  * can legitimately spend a few seconds doing it. Anything that has not answered
  * by then is not a source worth defaulting to, whatever it eventually says.
  *
- * The main provider is not exempt, deliberately. It is one HTTP request and a
- * manifest probe and answers well inside this, so an exemption would buy nothing
- * in the ordinary case — while in the other case it would mean that a Main which
- * has stopped answering holds the whole watch page open, which is the failure
- * this constant exists to prevent. A Main that is too slow to answer is treated
- * as a Main that has nothing, and the best of the rest plays.
+ * This paragraph used to say that the main provider answered well inside it —
+ * "one HTTP request and a manifest probe". That stopped being true when its
+ * lookup gained a second hop it cannot avoid: the discovery host refuses this
+ * deployment, so the redirect has to be followed in the viewer's browser and the
+ * result posted back, which is two round trips through our own route with a
+ * browser's detour between them. It is still not slow work; it is simply more
+ * than five seconds reliably holds once a cold start lands in the middle of it.
+ * So Main states its own budget and this stays the figure for a provider whose
+ * answer really is one request.
+ *
+ * The cost of that is the worst case: everyone is awaited, so a Main that is
+ * going to give up at all holds the watch page for its own longer budget first.
+ * That is a real wait, and it is only paid when Main is the slow one — the price
+ * of the preferred source being the one with the longest path.
  */
 const COMPARE_TIMEOUT_MS = 5_000;
 
@@ -302,7 +332,7 @@ export async function resolveBestPlayback({
     const deadline = setTimeout(() => {
       gaveUp = true;
       controller.abort();
-    }, timeoutMs);
+    }, provider.timeoutMs ?? timeoutMs);
 
     const answer = { providerId: provider.id, label: provider.label ?? fallbackLabel(provider.id) };
 

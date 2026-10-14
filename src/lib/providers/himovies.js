@@ -20,21 +20,43 @@ export class MovieStreamScraper {
         }
 
         try {
+            // Manual redirect, so the 302's Location header can be read instead
+            // of being followed for us. Node's fetch exposes that header; this
+            // runs on the server, which is the only reason it can.
             const res = await fetch(endpoint, {
                 headers: this.headers,
-                redirect: 'follow'
+                redirect: 'manual'
             });
 
-            if (!res.ok) {
-                // A title this service does not carry is answered 404, or with
-                // a redirect out to another host that lands here as a 3xx. That
-                // is the ordinary miss, not a fault — the caller falls back to
-                // another source — so it is not worth a stack trace.
-                return null;
+            let embedUrl = res.headers.get('location');
+
+            if (!embedUrl && res.status >= 200 && res.status < 300) {
+                embedUrl = res.url;
             }
 
-            const html = await res.text();
-            return this.parsePlayerConfig(res.url, html);
+            if (!embedUrl) {
+                throw new Error(`Failed to capture redirect or stream URL. Status code: ${res.status}`);
+            }
+
+            // A relative Location is resolved against the host that sent it.
+            if (embedUrl.startsWith('/')) {
+                embedUrl = `${this.baseUrl}${embedUrl}`;
+            }
+
+            // The embed page is the one carrying the player config.
+            const embedRes = await fetch(embedUrl, {
+                headers: {
+                    ...this.headers,
+                    'Referer': this.baseUrl
+                }
+            });
+
+            if (!embedRes.ok) {
+                throw new Error(`Failed to fetch embed page: ${embedRes.status}`);
+            }
+
+            const html = await embedRes.text();
+            return this.parsePlayerConfig(embedUrl, html);
         } catch (error) {
             console.error('MovieStreamScraper Error:', error);
             return null;

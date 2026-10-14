@@ -2,12 +2,30 @@
  * ============================================================================
  *  MAIN — resolution
  * ============================================================================
- *  `POST { mediaType, tmdbId, imdbId?, season?, episode? }` → the player config
- *  for that title: `{ streamUrl, poster, duration, tracks }`.
+ *  `POST { mediaType, tmdbId, imdbId?, season?, episode?, embedUrl? }` → the
+ *  player config for that title: `{ streamUrl, poster, duration, tracks }`.
  *
  *  Server-side because it has to be. The lookup is a scrape of a page on someone
- *  else's site — cross-origin, and not an API anyone agreed to — so a browser
- *  could not read the answer even if it were allowed to ask.
+ *  else's site — cross-origin, and not an API anyone agreed to — so reading the
+ *  answer means fetching it from somewhere that is allowed to.
+ *
+ *  ---------------------------------------------------------------------------
+ *  Two hosts are involved, and they are not equally reachable
+ *  ---------------------------------------------------------------------------
+ *
+ *  The discovery host — the one that answers `/vmf/…` and `/vms/…` — redirects
+ *  to an embed page on a second host, and *that* is the one carrying the player
+ *  config this route parses. They are separately defended. From Vercel's egress
+ *  the discovery host refuses outright: it answers 403 to everything, including
+ *  its own root, with a full browser header set, while the embed host answers
+ *  200 normally. From a home connection both answer.
+ *
+ *  So this route can only ever see half of it in production, and the half it
+ *  cannot see is the one the viewer's own browser can — which is what `embedUrl`
+ *  is for. The provider, on finding this route has come back empty, follows the
+ *  redirect itself and asks again with where it landed; this route then fetches
+ *  the embed host, which it can reach, and parses it exactly as it would have.
+ *  The URL is not taken on trust — see `fromEmbed`.
  *
  *  ---------------------------------------------------------------------------
  *  The two URL shapes take different arguments
@@ -29,12 +47,18 @@
  *  ordinary outcome for a title nobody has. The 502 below is for a lookup that
  *  actually broke — the scraper only throws when the fetch itself failed.
  *
+ *  A miss carries `discoveryUrl` as well, which is the address the provider
+ *  should try the redirect against before giving up. It is what made this file's
+ *  URL building the one place the two shapes are written down, rather than
+ *  having the browser half build its own copy of a scheme it should not know.
+ *
  *  Nothing here is cached. The stream address is signed against the requesting
  *  address and expires within hours, so a cached one is worse than none.
  * ============================================================================
  */
 
 import { MovieStreamScraper } from '@/lib/providers/himovies';
+import { parseRequestUrl } from '@/lib/proxy/stream';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -82,45 +106,50 @@ const BROWSER_HEADERS = {
 };
 
 /**
- * What the discovery host said, logged, for the one case the answer cannot
- * carry it.
+ * Where the redirect for this title lives.
  *
- * `getMediaSources` flattens every way a lookup can come back empty — a status
- * that is not OK, a page with no player config in it, a fetch that never
- * connected — into a single `null`. That is the right answer for the caller,
- * which does the same thing in all three cases, and a useless one for us:
- * production has been reaching this branch on titles that resolve here, and no
- * amount of reading the code says whether that is a Cloudflare refusal or a
- * genuine miss.
+ * The one written-down copy of the two shapes, and the reason a miss carries a
+ * URL back to the browser: the provider follows it, and this route fetches what
+ * it lands on. Keeping it here rather than in the provider means the scraping
+ * scheme stays on the server side of the seam, where the rest of it is.
  *
- * So on a miss, and only on a miss, the request is made once more — by this
- * file, purely to log the status and where the redirect landed. It cannot
- * change the answer, because the miss is already decided by the time it runs,
- * and every way the probe itself can fail is swallowed; the worst it does is
- * put a line in the function log.
- *
- * The URL is built from `scraper.baseUrl` so that changing the mirror moves
- * this with it. The two shapes are the ones the header above describes.
- *
- * This is scaffolding around an open fault. Delete it once Main's misses have
- * an explanation.
+ * `scraper.baseUrl` rather than the address spelled out again, so that changing
+ * the mirror moves this with it.
  */
-async function reportMiss(scraper, title) {
-  const where =
-    title.mediaType === 'movie'
-      ? `${scraper.baseUrl}/vmf/${title.imdbId}/${title.tmdbId}/`
-      : `${scraper.baseUrl}/vms/${title.tmdbId}/${title.season}/${title.episode}/`;
+function discoveryUrl(scraper, title) {
+  return title.mediaType === 'movie'
+    ? `${scraper.baseUrl}/vmf/${title.imdbId}/${title.tmdbId}/`
+    : `${scraper.baseUrl}/vms/${title.tmdbId}/${title.season}/${title.episode}/`;
+}
 
-  try {
-    const probe = await fetch(where, {
-      headers: scraper.headers,
-      redirect: 'follow',
-      signal: AbortSignal.timeout(5_000),
-    });
-    console.warn(`[himovies] miss: upstream answered ${probe.status} at ${probe.url}`);
-  } catch (cause) {
-    console.warn(`[himovies] miss: upstream unreachable — ${cause?.message ?? cause}`);
+/**
+ * The player config, read from the embed page the browser found for us.
+ *
+ * This is the second half of a lookup the browser had to finish. It arrives as
+ * a plain string from the client, so it is not taken on trust: `parseRequestUrl`
+ * is the same guard the stream proxies apply to a URL they are asked to fetch,
+ * and it refuses anything that is not https, carries credentials, sits on a
+ * non-standard port, or resolves to somewhere on this machine or this network.
+ * That is the standing trade for these endpoints — any public host, but never
+ * ours — and it is worth the same re-deciding here that it is there.
+ *
+ * The parse itself is the scraper's own, called as it stands. Nothing about the
+ * shape of the page is written a second time.
+ */
+async function fromEmbed(scraper, value) {
+  const { url, reason } = parseRequestUrl(value);
+  if (!url) {
+    console.warn(`[himovies] refused an embed URL: ${reason}`);
+    return null;
   }
+
+  const response = await fetch(url, { headers: scraper.headers, redirect: 'follow' });
+  if (!response.ok) {
+    console.warn(`[himovies] embed host answered ${response.status}`);
+    return null;
+  }
+
+  return scraper.parsePlayerConfig(response.url, await response.text());
 }
 
 /**
@@ -178,20 +207,33 @@ export async function POST(request) {
   try {
     // A film is addressed by its `imdbId` and `tmdbId` together, an episode by
     // `tmdbId` and its season and episode numbers — see the header.
-    const found =
-      title.mediaType === 'movie'
+    //
+    // An `embedUrl` means the provider has already done the half of this that
+    // only a browser can and is asking us to finish; there is nothing to look
+    // up and no redirect to follow, so the discovery host is not touched.
+    const supplied = typeof input?.embedUrl === 'string' ? input.embedUrl.trim() : '';
+
+    const found = supplied
+      ? await fromEmbed(scraper, supplied)
+      : title.mediaType === 'movie'
         ? await scraper.getMediaSources('movie', title.imdbId, title.tmdbId)
         : await scraper.getMediaSources('tv', title.tmdbId, title.season, title.episode);
 
     // The scraper answers `null` for every way this can come back empty — a
     // title it does not carry, a status that is not OK, a fetch that failed —
     // so there is nothing here to tell apart. All of them mean the same thing
-    // to a viewer: this source does not have it, and the page falls back.
+    // to a viewer: this source does not have it, and the page falls back. The
+    // `discoveryUrl` is the exception: it says "not from here, possibly", and
+    // gives the provider the address to try the redirect against itself.
     if (!found?.streamUrl) {
-      await reportMiss(scraper, title);
-
       return Response.json(
-        { streamUrl: null, poster: null, duration: 0, tracks: [] },
+        {
+          streamUrl: null,
+          poster: null,
+          duration: 0,
+          tracks: [],
+          discoveryUrl: discoveryUrl(scraper, title),
+        },
         { headers: NO_STORE },
       );
     }

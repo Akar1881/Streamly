@@ -12,6 +12,33 @@
  *  this provider returns includes the subtitle files shipped with the copy being
  *  watched, so a translation made from one of them is timed to the film on
  *  screen rather than to some other release of it.
+ *
+ *  ---------------------------------------------------------------------------
+ *  The one part of the lookup that has to happen here
+ *  ---------------------------------------------------------------------------
+ *
+ *  Getting from a title to a stream is a hop through a host that redirects to
+ *  the embed page carrying the player config. Our server cannot make that hop
+ *  in production — the host refuses its address outright — and this browser can,
+ *  because it is the viewer's and that host has no quarrel with it.
+ *
+ *  So when the route comes back empty it also says where the redirect lives, and
+ *  this module follows it and asks again with the address it landed on. The page
+ *  itself is never read here: the route fetches and parses it, which it is able
+ *  to do, which keeps every part of the scraping scheme on the server side of
+ *  the seam and this module concerned only with playback.
+ *
+ *  Running here by default is also what keeps the fallback invisible. There is
+ *  no second attempt on a title that resolves normally, and none on a title
+ *  nobody carries beyond one extra request.
+ *
+ *  What it costs is the one thing the codename was for. `label` says `Main`, and
+ *  the rule in `src/lib/providers/index.js` is that a viewer never learns the
+ *  service behind it — but a request made from the viewer's own browser is one
+ *  the viewer can watch, and the address it goes to is in their network tab for
+ *  as long as the page is open. The name stays out of the interface, which is
+ *  what that rule is really protecting; it does not stay out of their devtools,
+ *  and there is no version of this that keeps both.
  * ============================================================================
  */
 
@@ -22,6 +49,42 @@
  * `src/lib/providers/index.js`. Alpha, Neon, Onyx and Vega are taken.
  */
 const CODENAME = 'Main';
+
+/**
+ * Where the discovery host sends a browser.
+ *
+ * This is the half of the lookup described in the header, and it is worth being
+ * clear about what is *not* done here: the response is not read, not parsed and
+ * not kept. All that is wanted is the address the redirect settled on, which the
+ * browser knows as soon as the response arrives.
+ *
+ * `no-referrer` because the request that is known to work from a home
+ * connection carries none, and `omit` because the viewer has no business
+ * sending this host a session it never gave us.
+ *
+ * Answers null when there is nothing to report: the request failed, or the URL
+ * came back unchanged — meaning the host did not redirect, so asking the route
+ * again would only repeat an attempt that has already been made.
+ */
+async function followRedirect(url, signal) {
+  try {
+    const response = await fetch(url, {
+      redirect: 'follow',
+      referrerPolicy: 'no-referrer',
+      credentials: 'omit',
+      signal,
+    });
+
+    // Read and dropped. It is a third party's markup on a phone connection and
+    // nothing in it is used, and `response.url` is already settled by the time
+    // the headers are.
+    await response.body?.cancel();
+
+    return response.url && response.url !== url ? response.url : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The stream, pointed through our proxy.
@@ -40,16 +103,35 @@ export default {
   label: CODENAME,
 
   async resolve({ mediaType, tmdbId, imdbId, season, episode, signal }) {
-    const response = await fetch('/api/himovies/resolve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mediaType, tmdbId, imdbId, season, episode }),
-      signal,
-    });
+    /** One attempt, with or without the address a browser resolved for us. */
+    async function ask(extra) {
+      const response = await fetch('/api/himovies/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaType, tmdbId, imdbId, season, episode, ...extra }),
+        signal,
+      });
 
-    if (!response.ok) throw new Error(`Main resolution failed (${response.status}).`);
+      if (!response.ok) throw new Error(`Main resolution failed (${response.status}).`);
+      return response.json();
+    }
 
-    const playback = await response.json();
+    let playback = await ask();
+
+    /**
+     * The second attempt, and only ever the second.
+     *
+     * A miss is not proof that the title is absent: it is also what this says
+     * when the route could not reach the discovery host at all, which in
+     * production is every time. The route tells the two apart for us by naming
+     * the address — it hands one back on every miss, so the test is simply
+     * whether the redirect lands somewhere new.
+     */
+    if (!playback.streamUrl && playback.discoveryUrl) {
+      const landed = await followRedirect(playback.discoveryUrl, signal);
+      if (landed) playback = await ask({ embedUrl: landed });
+    }
+
     if (typeof playback.streamUrl !== 'string' || !playback.streamUrl) return null;
 
     return {

@@ -45,6 +45,85 @@ const NO_STORE = { 'Cache-Control': 'no-store' };
 const CAPTIONS = 'captions';
 
 /**
+ * The headers the discovery fetch was missing.
+ *
+ * The scraper sends a User-Agent and a `Referer` naming the mirror these embeds
+ * were found on, and that pair is evidently enough from a home connection — it
+ * is what has been resolving titles here all along. It is not enough from a
+ * datacenter one. This host sits behind Cloudflare, and the challenge it serves
+ * a cloud address is scored on the headers a browser would have sent at least
+ * as much as on the address itself; a request carrying two of them reads as a
+ * script.
+ *
+ * Below is the rest of that set: `Accept`, the language, the `Sec-Fetch-*`
+ * triple and the client hints, valued as Chrome sends them for a cross-site
+ * iframe. They are laid *over* the scraper's own rather than replacing them, so
+ * the User-Agent and `Referer` that make this work locally are untouched.
+ *
+ * `Accept-Encoding` is deliberately not here. It is the one header undici sets
+ * for itself and will not let anyone else set, and what it negotiates is what
+ * it can decode.
+ *
+ * The version strings are the browser's, not ours, so they will go stale. That
+ * is true of the scraper's User-Agent too and it has not mattered: the challenge
+ * is asking whether a browser sent this, not which build.
+ */
+const BROWSER_HEADERS = {
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  Origin: 'https://himovies.watch',
+  'Sec-Fetch-Dest': 'iframe',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'cross-site',
+  'Upgrade-Insecure-Requests': '1',
+  'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"Windows"',
+};
+
+/**
+ * What the discovery host said, logged, for the one case the answer cannot
+ * carry it.
+ *
+ * `getMediaSources` flattens every way a lookup can come back empty — a status
+ * that is not OK, a page with no player config in it, a fetch that never
+ * connected — into a single `null`. That is the right answer for the caller,
+ * which does the same thing in all three cases, and a useless one for us:
+ * production has been reaching this branch on titles that resolve here, and no
+ * amount of reading the code says whether that is a Cloudflare refusal or a
+ * genuine miss.
+ *
+ * So on a miss, and only on a miss, the request is made once more — by this
+ * file, purely to log the status and where the redirect landed. It cannot
+ * change the answer, because the miss is already decided by the time it runs,
+ * and every way the probe itself can fail is swallowed; the worst it does is
+ * put a line in the function log.
+ *
+ * The URL is built from `scraper.baseUrl` so that changing the mirror moves
+ * this with it. The two shapes are the ones the header above describes.
+ *
+ * This is scaffolding around an open fault. Delete it once Main's misses have
+ * an explanation.
+ */
+async function reportMiss(scraper, title) {
+  const where =
+    title.mediaType === 'movie'
+      ? `${scraper.baseUrl}/vmf/${title.imdbId}/${title.tmdbId}/`
+      : `${scraper.baseUrl}/vms/${title.tmdbId}/${title.season}/${title.episode}/`;
+
+  try {
+    const probe = await fetch(where, {
+      headers: scraper.headers,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(5_000),
+    });
+    console.warn(`[himovies] miss: upstream answered ${probe.status} at ${probe.url}`);
+  } catch (cause) {
+    console.warn(`[himovies] miss: upstream unreachable — ${cause?.message ?? cause}`);
+  }
+}
+
+/**
  * Reads a title out of a request, or explains why it cannot.
  *
  * `imdbId` is taken as the `tt…` string it is, not coerced to a number — it is
@@ -89,7 +168,12 @@ export async function POST(request) {
   const { title, error } = readTitle(input);
   if (error) return Response.json({ error }, { status: 400, headers: NO_STORE });
 
+  // The scraper is used as it is written; the only thing changed about it is
+  // the set of headers on the wire, which is this route's business rather than
+  // its own. `headers` is a fresh object per instance, so this reaches nothing
+  // but the instance about to be used. See BROWSER_HEADERS.
   const scraper = new MovieStreamScraper();
+  Object.assign(scraper.headers, BROWSER_HEADERS);
 
   try {
     // A film is addressed by its `imdbId` and `tmdbId` together, an episode by
@@ -104,6 +188,8 @@ export async function POST(request) {
     // so there is nothing here to tell apart. All of them mean the same thing
     // to a viewer: this source does not have it, and the page falls back.
     if (!found?.streamUrl) {
+      await reportMiss(scraper, title);
+
       return Response.json(
         { streamUrl: null, poster: null, duration: 0, tracks: [] },
         { headers: NO_STORE },

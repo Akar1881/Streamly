@@ -1,0 +1,125 @@
+# =============================================================================
+#  RELEASE — build the Linux app, publish it when the build succeeds
+# =============================================================================
+#
+#  Every push to `main` builds the AppImage and, if it builds, replaces the
+#  asset on a rolling `latest` release. One download link that always means
+#  "the newest commit that compiled", which is what a download link should be.
+#
+#  ---------------------------------------------------------------------------
+#  The four secrets, and what publishing them means
+#  ---------------------------------------------------------------------------
+#
+#  `scripts/desktop-keys.mjs` reads these four from the environment and writes
+#  them into `desktop/builtin-keys.json`, which ships inside the AppImage. That
+#  file is what makes the app work before anyone has entered a key of their own
+#  — the first-run screen offers "or use the built-in keys", and this is where
+#  those come from.
+#
+#  It also means **anyone who downloads the AppImage from Releases can read all
+#  four out of it.** For a public repository that is anyone at all. The
+#  translator's key is the one to think about, because it is billed per use.
+#  The mitigations are to make the repository private, or to leave the secrets
+#  unset — in which case the build still succeeds and the first-run screen asks
+#  each viewer for their own keys instead.
+#
+#  Set them under Settings → Secrets and variables → Actions → New repository
+#  secret, with exactly these names.
+#
+# =============================================================================
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  # So a build can be triggered without pushing an empty commit.
+  workflow_dispatch:
+
+# `contents: write` is what lets the job create the release and upload the
+# asset. It is the only permission this needs.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Not `cancel-in-progress`: a cancelled run can be killed partway through
+  # uploading a 134 MB file, which leaves a truncated download behind until the
+  # next build replaces it. Queuing costs a few minutes and always ends with
+  # the newest successful commit published.
+  cancel-in-progress: false
+
+jobs:
+  appimage:
+    name: Build and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        # `ci` rather than `install` so the lockfile is authoritative and the
+        # build fails loudly if it and package.json have drifted apart.
+        run: npm ci
+
+      - name: FUSE runtime
+        # electron-builder's AppImage tooling links against libfuse2 to build
+        # the image. Recent Ubuntu renamed the package. Neither is always
+        # needed and neither is worth failing a release over.
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
+
+      - name: Build the AppImage
+        # The four names have to match `NAMES` in scripts/desktop-keys.mjs.
+        # An unset secret expands to an empty string, which the script treats
+        # as absent and warns about rather than failing on.
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TMDB_ACCESS_TOKEN: ${{ secrets.TMDB_ACCESS_TOKEN }}
+          WYZIE_API_KEY: ${{ secrets.WYZIE_API_KEY }}
+          TRANSLATE_API_KEY: ${{ secrets.TRANSLATE_API_KEY }}
+        run: npm run desktop:pack
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          version="$(node -p "require('./package.json').version")"
+          asset="release/Streamly-${version}.AppImage"
+
+          if [ ! -f "$asset" ]; then
+            echo "::error::electron-builder produced no AppImage at $asset"
+            exit 1
+          fi
+
+          # A checksum beside the binary, so a download can be verified without
+          # trusting the transfer that delivered it.
+          ( cd release && sha256sum "$(basename "$asset")" > "$(basename "$asset").sha256" )
+
+          short="${SHA:0:7}"
+          subject="$(git log -1 --pretty=%s)"
+          notes="$(printf '%s\n\n%s\n%s\n' \
+            "$short — $subject" \
+            "Commit: https://github.com/${GITHUB_REPOSITORY}/commit/${SHA}" \
+            "This is a rolling release: the asset below is replaced by every successful build on \`main\`.")"
+
+          if gh release view latest >/dev/null 2>&1; then
+            gh release edit latest --title "Streamly ${version}" --notes "$notes"
+          else
+            gh release create latest --title "Streamly ${version}" --notes "$notes"
+          fi
+
+          # `--clobber` replaces the previous asset, which is the whole point of
+          # a rolling release. The checksum is uploaded with it so the two can
+          # never be a build apart.
+          gh release upload latest "$asset" "${asset}.sha256" --clobber

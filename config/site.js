@@ -355,14 +355,25 @@ const site = {
     /**
      * Where playback comes from, in the order they are offered.
      *
-     * The order is a **tie-break, not a default**. Every id listed here is asked
-     * for each title, and the one that comes back with the best picture plays —
-     * see `resolveBestPlayback` in `src/lib/providers/index.js`. So putting an id
-     * first does not put it on screen; it decides only between providers that
-     * measured the same, which is the common case and the one order is good for.
+     * `main` names the one the site prefers. **If the main provider has the
+     * title, it plays**, whatever the others came back with — see
+     * `resolveBestPlayback` in `src/lib/providers/index.js`. The reason is not
+     * the picture but the subtitles: this provider hands back the subtitle files
+     * shipped with the copy being watched, and a translation made from one of
+     * those is timed to the film on screen rather than to some other release of
+     * it. Losing to a provider that happens to offer a wider rung would trade
+     * that away for a difference most viewers cannot see.
+     *
+     * Leave `main` null to go back to picking purely on measured resolution.
+     *
+     * The order of `providers` decides what happens when the main one has
+     * nothing: it is a **tie-break, not a default**. Every id listed is asked for
+     * each title, and among those that answered the one with the best picture
+     * plays — so putting an id first does not put it on screen, it decides only
+     * between providers that measured the same.
      *
      * That also means every id here costs its lookup on every watch page, even
-     * when it loses. Listing one id makes this free.
+     * when it loses.
      *
      * Each id names a module in `src/lib/providers/`. Adding one is a module
      * and a line in that directory's `PROVIDERS` map — the worked example and
@@ -373,7 +384,22 @@ const site = {
      * **Empty is a valid state.** With nothing listed the watch pages say no
      * source is configured rather than showing a player that cannot play.
      */
-    providers: ['videasy', 'vidnest', 'vidplay'],
+    providers: ['himovies', 'videasy', 'vidnest', 'vidplay'],
+
+    /**
+     * The id in `providers` above that the site treats as its own source.
+     *
+     * An id rather than a flag on the provider module, because this is a
+     * statement about the site's arrangement rather than about the provider: it
+     * belongs in the file that already decides which providers exist and in what
+     * order, and it can be changed here without touching provider code.
+     *
+     * An id that names nothing — a typo, or a module that was removed — costs
+     * the preference and nothing else. The comparison falls back to resolution
+     * and the site keeps working.
+     */
+    main: 'himovies',
+
     /** Start playing as soon as the page opens. */
     autoplay: true,
     /** Offer a "Next episode" button on TV playback pages. */

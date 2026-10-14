@@ -14,14 +14,26 @@ import Icon from '@/components/ui/Icon';
  *  inside the player frame, which is a plain positioned box, so being a child of
  *  it is both simpler and correct — it cannot end up outside the video.
  *
- *  The panel is capped to the room that is actually left above the control bar,
- *  and the middle of it is what scrolls. On a phone the player is a 16:9 box
- *  barely 200px tall, and the bar claims the bottom of it — a menu laid out at
- *  its natural height is taller than what is left, and because the frame clips
- *  its children the top of it used to disappear off the top of the picture.
+ *  The panel is capped, and the middle of it is what scrolls. There are two
+ *  caps and the shorter one wins, because the two ways a menu can go wrong pull
+ *  in opposite directions.
+ *
+ *  The room left above the control bar is the hard one. This panel is a child
+ *  of the player frame, the frame clips its children, and on a phone that frame
+ *  is a 16:9 box barely 200px tall with the bar claiming the bottom of it — so a
+ *  menu laid out at its natural height used to lose its top off the top of the
+ *  picture.
+ *
+ *  The other cap is the fixed `28rem`, and it is for the opposite failure. A
+ *  menu's height is its content's, and the captions list runs to a row per
+ *  language a release shipped; a fullscreen player on a phone, meanwhile, is a
+ *  frame-relative cap of the entire screen. The two together make a list that
+ *  grows without limit inside a cap that never stops it, which is a menu that
+ *  covers the film it is being used to choose subtitles for. The fixed cap is
+ *  what keeps the panel a panel at every size.
+ *
  *  Header and footer are pinned, so the title and the action always stay in
- *  view; on a desktop the cap is far above any menu's real height and does
- *  nothing.
+ *  view.
  *
  *  The colours are deliberately hard-coded black and white rather than the
  *  theme's `--card` and `--text`. This panel is always over video, and the light
@@ -32,11 +44,15 @@ import Icon from '@/components/ui/Icon';
 
 /** The panel itself. */
 export default function PlayerMenu({ title, onBack, onClose, children, footer, wide = false }) {
+  // The `min()` below is the two caps from the header, shorter one winning, and
+  // the `28rem` is written out as a literal on purpose: Tailwind reads this file
+  // as plain text, so a value assembled from a constant would reach the scanner
+  // as `min(${…},…)` and compile to nothing at all.
   return (
     <div
       role="dialog"
       aria-label={title}
-      className={`absolute bottom-[4.75rem] right-2 z-30 flex max-h-[calc(100%-5.25rem)]
+      className={`absolute bottom-[4.75rem] right-2 z-30 flex max-h-[min(28rem,calc(100%-5.25rem))]
         max-w-[calc(100%-1rem)] flex-col overflow-hidden
         rounded-[var(--radius-card)] border border-white/10 bg-black/90 text-white shadow-2xl
         backdrop-blur-md sm:right-3 ${wide ? 'w-[21rem]' : 'w-[17.5rem]'}`}

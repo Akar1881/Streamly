@@ -102,6 +102,7 @@
  */
 
 import site from '@config/site';
+import himovies from './himovies-provider';
 import videasy from './videasy-provider';
 import vidnest from './vidnest-provider';
 import vidplay from './vidplay-provider';
@@ -114,7 +115,7 @@ import { measureStream } from './quality';
  * listed in `config/site.js` with no module here is skipped rather than
  * crashing the watch page, so a typo costs a switcher entry, not the site.
  */
-const PROVIDERS = { videasy, vidnest, vidplay };
+const PROVIDERS = { himovies, videasy, vidnest, vidplay };
 
 /**
  * What to call a provider that has no `label`.
@@ -203,18 +204,24 @@ export async function resolvePlayback({
 /**
  * How long any one provider gets to answer before it is out of the running.
  *
- * The list order in `config/site.js` decides ties, not the outcome, so a provider
- * that never answers would hold up the choice for as long as it felt like — and
- * they do not all defend themselves. Vidnest gives each of the ten servers it
- * asks eight seconds, which is longer than a source is worth waiting for before
- * anyone knows whether it has this title; Videasy has no deadline at all and
- * passes the signal straight through to a chain of fetches that will sit there
- * until something else cancels it. So the deadline is ours, and it is the only
- * thing standing between a hung source and a watch page that never starts.
+ * A provider that never answers would hold up the choice for as long as it felt
+ * like — and they do not all defend themselves. Vidnest gives each of the ten
+ * servers it asks eight seconds, which is longer than a source is worth waiting
+ * for before anyone knows whether it has this title; Videasy has no deadline at
+ * all and passes the signal straight through to a chain of fetches that will sit
+ * there until something else cancels it. So the deadline is ours, and it is the
+ * only thing standing between a hung source and a watch page that never starts.
  *
  * Five seconds is chosen against the slow one, which fans out to ten hosts and
  * can legitimately spend a few seconds doing it. Anything that has not answered
  * by then is not a source worth defaulting to, whatever it eventually says.
+ *
+ * The main provider is not exempt, deliberately. It is one HTTP request and a
+ * manifest probe and answers well inside this, so an exemption would buy nothing
+ * in the ordinary case — while in the other case it would mean that a Main which
+ * has stopped answering holds the whole watch page open, which is the failure
+ * this constant exists to prevent. A Main that is too slow to answer is treated
+ * as a Main that has nothing, and the best of the rest plays.
  */
 const COMPARE_TIMEOUT_MS = 5_000;
 
@@ -245,17 +252,22 @@ function declaredQuality(source) {
 }
 
 /**
- * Asks every configured provider, and says which of them answered best.
+ * Asks every configured provider, and says which of them should play.
  *
- * This is the difference between "the first source in the config file" and "the
- * best source for this title". It is not free, and the cost is the whole reason
- * this is one function with a comment rather than a line in the caller: every
- * provider is asked on every title, where before only one was, so a watch page
- * now costs the sum of everyone's lookups upstream even though it plays exactly
- * one of them. What it buys is that the film starts on the best copy available
- * rather than on whichever service happened to be listed first — a film that
- * came back as 2160p from one provider and 800p from another plays at 2160p
- * without the viewer having to know there was a choice.
+ * Two rules, in this order: the provider named by `player.main` in
+ * `config/site.js` wins if it has the title, and otherwise the best of the rest
+ * does. The reason for the first is in the selection below. The reason for the
+ * second is that "best" is not something a config file can say in advance — a
+ * provider that came back as 2160p and one that came back as 800p are not the
+ * same thing to watch, and which of them has the better copy of *this* film is
+ * a fact nobody knows until they are asked.
+ *
+ * Asking everyone is not free, and the cost is the whole reason this is one
+ * function with a comment rather than a line in the caller: every provider is
+ * asked on every title, where before only one was, so a watch page now costs
+ * the sum of everyone's lookups upstream even though it plays exactly one of
+ * them. What it buys, beyond the ranking, is a source menu that knows what each
+ * one had before the viewer opens it — including which of them to strike out.
  *
  * They are asked concurrently, so the wait is the slowest provider rather than
  * the total. Everything that came back is returned, not just the winner: the
@@ -335,14 +347,37 @@ export async function resolveBestPlayback({
   const answers = await Promise.all(listProviders().map(ask));
   const playable = answers.filter((answer) => answer.playback);
 
-  // Ties keep the earlier answer, because `listProviders` is in config order and
-  // a reduce that only replaces on strictly greater preserves it. Two providers
-  // offering the same resolution is the common case, and there the config file
-  // is the only preference anyone has expressed.
-  const chosen = playable.reduce(
+  /**
+   * The main provider, when it answered — and it wins without being compared.
+   *
+   * `player.main` in `config/site.js` names one id as the site's own source, and
+   * the rule is that if it has the title, it plays. Resolution does not enter
+   * into it, which is the point: the reason to prefer this provider is not that
+   * its picture is widest but that it is the one whose *subtitles* come with the
+   * copy being played, and a translation made from a file shipped alongside the
+   * film is timed to the film. Losing to a provider that happens to offer a
+   * wider rung would trade that away for a resolution difference most viewers
+   * cannot see.
+   *
+   * The others are still asked, and still in `answers` — the source menu strikes
+   * out the ones that came up empty from there, and the viewer can switch to any
+   * of them at no cost. This decides only which one is on screen when the page
+   * opens.
+   */
+  const main = playable.find((answer) => answer.providerId === site.player.main);
+
+  /**
+   * Everything else, ranked by what it actually has.
+   *
+   * Ties keep the earlier answer, because `listProviders` is in config order and
+   * a reduce that only replaces on strictly greater preserves it. Two providers
+   * offering the same resolution is the common case, and there the config file
+   * is the only preference anyone has expressed.
+   */
+  const runnerUp = playable.reduce(
     (leader, answer) => ((answer.quality?.width ?? 0) > (leader.quality?.width ?? 0) ? answer : leader),
     playable[0],
   );
 
-  return { chosen: chosen ?? null, answers };
+  return { chosen: main ?? runnerUp ?? null, answers };
 }

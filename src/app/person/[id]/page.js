@@ -33,7 +33,7 @@ export default async function PersonPage({ params }) {
   if (!site.features.people) notFound();
 
   const person = await load(params);
-  const image = profileUrl(person.profilePath, 'h632');
+  const image = profileUrl(person.profilePath);
 
   // Acting roles first; fall back to crew credits for directors and writers.
   const credits = person.cast.length > 0 ? person.cast : person.crew;

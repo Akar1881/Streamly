@@ -15,7 +15,7 @@
  *
  *  The discovery host — the one that answers `/vmf/…` and `/vms/…` — redirects
  *  to an embed page on a second host, and *that* is the one carrying the player
- *  config this route parses. They are separately defended. From Vercel's egress
+ *  config this route parses. They are separately defended. From a datacenter IP
  *  the discovery host refuses outright: it answers 403 to everything, including
  *  its own root, with a full browser header set, while the embed host answers
  *  200 normally. From a home connection both answer.

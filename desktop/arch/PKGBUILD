@@ -1,0 +1,99 @@
+# =============================================================================
+#  STREAMLY — an Arch package around the AppImage
+# =============================================================================
+#
+#  The AppImage is a single file you can double-click, which is fine for
+#  someone who downloaded it and awkward for everyone else: it is not in a
+#  launcher, it has no icon, and it lives wherever the download landed. This
+#  wraps it so `pacman -Rs streamly` takes it away again cleanly.
+#
+#  It builds from the AppImage that `npm run desktop:pack` has already produced
+#  rather than downloading anything, so **run that first**:
+#
+#      npm run desktop:pack
+#      cd desktop/arch && makepkg -si
+#
+#  -----------------------------------------------------------------------------
+#  Two things to keep in step with the app
+#  -----------------------------------------------------------------------------
+#
+#  `pkgver` must match `version` in package.json, because that is what
+#  electron-builder puts in the AppImage's filename. Both are 0.1.0 today.
+#
+#  `pkgrel` is Arch's — bump it for packaging changes that leave the app itself
+#  alone, so a rebuilt package still looks newer than the one installed.
+#
+#  -----------------------------------------------------------------------------
+#  The sandbox
+#  -----------------------------------------------------------------------------
+#
+#  The AppImage carries `chrome-sandbox` at mode 755 rather than setuid root, so
+#  Chromium's setuid sandbox cannot start — and a setuid bit inside a squashfs
+#  image mounted `nosuid` would not help either. That is why electron-builder
+#  writes `--no-sandbox` into the desktop entry it generates, and why the entry
+#  below passes it too: installing this package should behave the same as
+#  running the AppImage from a file manager, not differently.
+#
+#  Keeping the sandbox instead means unpacking the image and installing the
+#  helper outside it, where it can hold a setuid bit:
+#
+#      ./Streamly-0.1.0.AppImage --appimage-extract
+#      install -Dm4755 -oroot -groot squashfs-root/chrome-sandbox \
+#        "$pkgdir/opt/streamly/chrome-sandbox"
+#
+#  ...with the rest of `squashfs-root/` beside it, and the flag dropped from the
+#  Exec line. Nothing here does that.
+# =============================================================================
+
+pkgname=streamly
+pkgver=0.1.0
+pkgrel=1
+
+pkgdesc='Films, series and Sorani subtitles, running on this machine'
+arch=('x86_64')
+url='https://github.com/akar1881'
+
+# A catalogue and a player, neither of which needs anything installed beside
+# it — the AppImage carries its own browser and its own runtime.
+license=('custom')
+depends=('fuse2')
+
+# Deliberately empty. The payload is the build output sitting in the repository
+# three directories up, not a download, so there is nothing for makepkg to
+# fetch and no checksum to record.
+source=()
+options=('!strip' '!debug')
+
+package() {
+  local appimage="$startdir/../../release/Streamly-${pkgver}.AppImage"
+
+  if [[ ! -f "$appimage" ]]; then
+    error "No AppImage at $appimage"
+    error "Run 'npm run desktop:pack' first — this package wraps its output."
+    exit 1
+  fi
+
+  # The payload. `/opt` because this is third-party software that pacman does
+  # not own a share of; `/usr/bin` gets a link rather than being told about it.
+  install -Dm755 "$appimage" "$pkgdir/opt/streamly/streamly.AppImage"
+
+  install -d "$pkgdir/usr/bin"
+  ln -s /opt/streamly/streamly.AppImage "$pkgdir/usr/bin/streamly"
+
+  install -Dm644 "$startdir/../resources/icon.png" \
+    "$pkgdir/usr/share/icons/hicolor/1024x1024/apps/streamly.png"
+
+  install -d "$pkgdir/usr/share/applications"
+  cat > "$pkgdir/usr/share/applications/streamly.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Streamly
+Comment=Films, series and Sorani subtitles
+Exec=streamly --no-sandbox %U
+Icon=streamly
+Terminal=false
+Categories=AudioVideo;Player;Video;
+StartupNotify=true
+StartupWMClass=Streamly
+DESKTOP
+}

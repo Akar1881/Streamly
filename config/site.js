@@ -182,7 +182,11 @@ const site = {
       { label: 'My List', href: '/my-list', icon: 'bookmark' },
       // Five is the ceiling: MobileNav renders `nav.main.slice(0, 5)` into the
       // bottom tab bar, so anything past this one would be invisible on phones.
-      { label: 'About', href: '/about', icon: 'info' },
+      //
+      // Labelled "Settings" rather than "About & Settings", which is what the
+      // page itself is headed — the sidebar is narrow and the tab bar narrower,
+      // and this is the word someone scanning for the key fields looks for.
+      { label: 'Settings', href: '/settings', icon: 'settings-2' },
     ],
     /** Small heading printed above the links. Empty string hides it. */
     heading: 'Main Navigation',
@@ -214,8 +218,10 @@ const site = {
   /*  ABOUT PAGE — what this is, who made it, where to follow along      */
   /* ------------------------------------------------------------------ */
   /**
-   * Everything on `/about`. It is all copy, so it lives here rather than in the
-   * component — the same rule as the rest of this file.
+   * The narrative half of `/settings`, which is headed "About & Settings" —
+   * see the `settings` block below for the other half. It is all copy, so it
+   * lives here rather than in the component — the same rule as the rest of
+   * this file.
    */
   about: {
     /** Shown above the fold. */
@@ -255,6 +261,116 @@ const site = {
         'It is also the way to get in touch.',
       action: 'Join @streamly_akar1881',
       href: 'https://t.me/streamly_akar1881',
+    },
+  },
+
+  /* ------------------------------------------------------------------ */
+  /*  SETTINGS — the keys a viewer may bring their own                    */
+  /* ------------------------------------------------------------------ */
+  /**
+   * Copy for `/settings` and the first-run wizard.
+   *
+   * No key values here, and none anywhere else in this file — see the warning
+   * at the top. What this block holds is what each key is *called* and the
+   * one-line reason somebody would want their own instead of the built-in one.
+   *
+   * `fields` is keyed by the environment variable each key stands for, because
+   * that is the name the server stores it under. Which of them a viewer is
+   * allowed to replace is `EDITABLE` in `src/lib/settings.js`, and that list is
+   * the one that decides — a name added there shows up on the page with no copy
+   * of its own rather than not showing up at all, so the two lists drifting
+   * cannot hide a key that is genuinely editable.
+   */
+  settings: {
+    title: 'About & Settings',
+    /**
+     * Sits under the heading, above the form. Written for someone who has just
+     * opened the desktop app and is wondering what "the built-in keys" means.
+     */
+    intro:
+      'Streamly needs a few accounts behind it to find films and fetch subtitles. ' +
+      'You can use ours, or paste your own below — your own are faster, and are not ' +
+      'shared with everybody else using the app.',
+
+    fields: {
+      TMDB_API_KEY: {
+        label: 'TMDB API key',
+        help: 'The short v3 key from your TMDB account settings.',
+        href: 'https://www.themoviedb.org/settings/api',
+        linkLabel: 'themoviedb.org/settings/api',
+      },
+      TMDB_ACCESS_TOKEN: {
+        label: 'TMDB read access token',
+        help:
+          'The long v4 token, from the same page. Either this or the key above is ' +
+          'enough on its own — if you fill in both, this one wins.',
+        href: 'https://www.themoviedb.org/settings/api',
+        linkLabel: 'themoviedb.org/settings/api',
+      },
+      WYZIE_API_KEY: {
+        label: 'Wyzie Subs key',
+        help:
+          'From your Wyzie account. Ours is shared with everyone using the app, so a ' +
+          'key of your own is worth having if subtitles ever stall.',
+      },
+    },
+
+    /**
+     * What each key's box says about where its value currently comes from.
+     * `builtin` never names ours or shows it — the client is told that one
+     * exists, never what it is. See `status()` in `src/lib/settings.js`.
+     */
+    state: {
+      builtin: 'Using the built-in key',
+      user: 'Using your key',
+      none: 'Not configured',
+    },
+
+    /**
+     * Why the form is not editable, for a viewer reading this on the website
+     * rather than in the app. On a deployed site the keys belong to the site
+     * rather than to whoever is reading, and there is nowhere to write to.
+     */
+    locked:
+      'Keys can only be changed in the Streamly desktop app. This page is running ' +
+      'on a server, where the keys belong to the site rather than to you.',
+
+    /** Offered under the form, to go back through the first-run wizard. */
+    rerun: 'Run the setup again',
+  },
+
+  /* ------------------------------------------------------------------ */
+  /*  FIRST RUN — the wizard the desktop app opens once                  */
+  /* ------------------------------------------------------------------ */
+  /**
+   * Shown at `/welcome`, which the desktop app opens on its first launch and
+   * never again once it has been completed. Skippable at every step, and framed
+   * that way on purpose: the built-in keys work, and the whole point of the
+   * screen is to offer an upgrade rather than to make a demand.
+   */
+  welcome: {
+    title: 'Welcome to Streamly',
+    intro:
+      'Films, series and subtitles, running on your own machine — no account, ' +
+      'nothing to sign up for.',
+
+    keys: {
+      title: 'Add your own keys',
+      /** The honest version of "optional". */
+      message:
+        'Optional. Streamly ships with keys of its own, so it works without this — ' +
+        'but they are shared with everyone else using the app, which makes them ' +
+        'slower and likelier to run out. Your own are free and take a minute to get.',
+      skip: 'Skip — use the built-in keys',
+      save: 'Save and continue',
+    },
+
+    done: {
+      title: 'Ready',
+      /** Two variants, because the wizard ends differently depending on the choice. */
+      usingOwn: 'Streamly will use the keys you just added. You can change them any time in Settings.',
+      usingBuiltin: 'Streamly will use its built-in keys. You can add your own any time in Settings.',
+      action: 'Start watching',
     },
   },
 
@@ -735,33 +851,37 @@ const site = {
     imageBase: 'https://image.tmdb.org/t/p',
 
     /**
-     * The size used in each context. These values are load-bearing for
-     * bandwidth: `next.config.mjs` sets `images.unoptimized`, so there is no
-     * `srcset` and every visitor downloads exactly this file no matter how
-     * wide their screen is. Sizes that exist on TMDB:
+     * The size used in each context.
+     *
+     * Every slot takes TMDB's largest, because all of what made the smaller
+     * ones worth choosing is gone. `next.config.mjs` sets
+     * `images.unoptimized`, so there is no `srcset` and this value is exactly
+     * the file that gets downloaded; these presets existed to keep that
+     * download small on a host that meters egress. Running locally there is no
+     * host and no meter — the bytes go from TMDB's CDN to this machine — so
+     * the only cost left is the wait.
+     *
+     * Sizes that exist on TMDB:
      *
      *   posters  w92  w154  w185  w342  w500  w780  original
      *   backdrops/stills  w300  w780  w1280  original
      *   profiles  w45  w185  h632  original
      *   logos  w45  w92  w154  w185  w300  w500  original
      *
-     * Grids are by far the highest-volume images on the site — a single browse
-     * page renders 20+ posters — so `poster` trades a little sharpness on
-     * high-DPI desktops for roughly half the bytes of `w500`.
+     * Worth knowing the shape of what that buys: `original` is the file TMDB
+     * was handed, which for a backdrop is often 3840px and several megabytes,
+     * and a browse grid renders twenty-odd posters at once. A cold page is
+     * therefore tens of megabytes where it used to be a few hundred kilobytes,
+     * and the browser holds a decoded backdrop in memory at roughly 33 MB.
+     * After the first visit they are cached. Revisit this if this build ever
+     * goes back onto a host that bills for transfer.
      */
     sizes: {
-      poster: 'w342',
-      /**
-       * Hero banners at `w1280` (~150-300 KB). `original` on this slot was
-       * the single largest download on the site — 3840px backdrops at several
-       * MB each, eagerly loaded above the fold on every detail page and on
-       * the home hero. TMDB has no size between w1280 and original, so this
-       * is the largest sane step down.
-       */
-      backdrop: 'w1280',
-      still: 'w300', //  episode thumbnails
-      profile: 'w185', //  cast photos
-      logo: 'w500', //  title logos on the hero
+      poster: 'original',
+      backdrop: 'original',
+      still: 'original', //  episode thumbnails
+      profile: 'original', //  cast photos
+      logo: 'original', //  title logos on the hero
     },
 
     /** Seconds before cached TMDB responses are refreshed. */

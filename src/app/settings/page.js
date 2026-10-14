@@ -1,49 +1,70 @@
 import site from '@config/site';
 import Icon from '@/components/ui/Icon';
+import SettingsForm from '@/components/settings/SettingsForm';
+import { describe, writable } from '@/lib/settings';
 
 /**
  * ============================================================================
- *  ABOUT
+ *  ABOUT & SETTINGS
  * ============================================================================
  *
- *  What the site is, that it is not finished, who made it, and where to follow
- *  along. Every word comes from `site.about` in `config/site.js` — this file is
- *  layout only, so the copy can be changed without reading JSX.
+ *  Two pages that turned out to be one. What the site is, that it is not
+ *  finished, who made it and where to follow along — and, above all of that,
+ *  the keys it runs on and how to put your own in their place.
  *
- *  The credit is a handle and nothing more. No name, location or phone number:
- *  this page is public and indexed, and scrapers harvest exactly that kind of
- *  detail. Telegram reaches the same person and can be blocked.
+ *  They belong together because they answer the same question. "About" is where
+ *  a viewer goes when something is not working; a stale shared key is the most
+ *  likely reason; and this is the page that both explains the arrangement and
+ *  fixes it. Kept separate, the explanation would have been on one page and the
+ *  fix on another, and neither would have said the other existed.
  *
- *  A server component: nothing here is interactive, so it ships as HTML and
- *  needs no JavaScript to read.
+ *  Every word still comes from `config/site.js` — `site.about` for the
+ *  narrative, `site.settings` for the keys — so the copy can be rewritten
+ *  without reading JSX.
+ *
+ *  ---------------------------------------------------------------------------
+ *  Rendered per request, not at build time
+ *  ---------------------------------------------------------------------------
+ *
+ *  `describe()` and `writable()` read a file on this machine, so the badges
+ *  beside the fields are a fact about right now. Prerendered, they would be a
+ *  fact about whenever `next build` ran — which is exactly wrong for the one
+ *  page whose whole job is to say whether your key took effect.
+ *
+ *  ---------------------------------------------------------------------------
+ *  The credit
+ *  ---------------------------------------------------------------------------
+ *
+ *  A handle and nothing more. No name, location or phone number: this page is
+ *  public and indexed, and scrapers harvest exactly that kind of detail.
+ *  Telegram reaches the same person and can be blocked.
  * ============================================================================
  */
 
 export const metadata = {
-  title: 'About',
+  title: 'About & Settings',
   description:
-    'What Streamly is, who makes it, and what state it is in. ' +
-    'Movies and TV in one place, still under development.',
-  /**
-   * The page has no query strings or variants, so this is only here to state
-   * that outright — `/about` is the one URL that should rank for it.
-   */
-  alternates: { canonical: '/about' },
+    'What Streamly is, who makes it, and what state it is in — plus the API keys ' +
+    'it runs on, and how to use your own instead.',
+  alternates: { canonical: '/settings' },
 };
+
+export const dynamic = 'force-dynamic';
 
 function SectionHeading({ children }) {
   return <h2 className="text-lg font-semibold tracking-tight">{children}</h2>;
 }
 
-export default function AboutPage() {
-  const { about, brand, footer } = site;
+export default function SettingsPage() {
+  const { about, brand, footer, settings } = site;
   const { status, maker, community } = about;
+  const { fields, words } = describe();
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-3xl">
         <header>
-          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">About</h1>
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{settings.title}</h1>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">{about.intro}</p>
 
           {/*
@@ -54,6 +75,21 @@ export default function AboutPage() {
             Made by <span className="font-medium text-text">{maker.credit}</span>
           </p>
         </header>
+
+        {/* ---------------- keys ---------------- */}
+        <section className="mt-8">
+          <p className="mb-4 max-w-2xl text-sm leading-relaxed text-muted">{settings.intro}</p>
+
+          <SettingsForm fields={fields} words={words} writable={writable()} />
+
+          <a
+            href="/welcome"
+            className="mt-3 inline-block text-xs text-muted underline underline-offset-2
+              transition-colors hover:text-text"
+          >
+            {settings.rerun}
+          </a>
+        </section>
 
         {/*
           The unfinished-site notice. `status` can be deleted from the config

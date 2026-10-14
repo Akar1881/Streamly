@@ -25,12 +25,17 @@ yarn-error.log*
 .env
 .env*.local
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
 
 # translated subtitles (see config/site.js → subtitles.cacheDir)
 /tmp/
 .env*
+
+# desktop builds — the AppImage and the unpacked tree electron-builder
+# produces beside it (see electron-builder.yml → directories.output)
+/release/
+
+# The keys baked into a desktop build, written by scripts/desktop-keys.mjs from
+# .env.local. Real credentials, generated every build, never committed.
+/desktop/builtin-keys.json

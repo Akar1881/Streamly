@@ -1,0 +1,75 @@
+# =============================================================================
+#  ELECTRON-BUILDER — how the desktop app is packed
+# =============================================================================
+#
+#  `npm run desktop:pack` turns the standalone bundle into an AppImage. The
+#  shell itself is `desktop/main.cjs`, which is where the interesting parts are;
+#  this file is only about what ends up in the archive and what it is called.
+#
+#  -----------------------------------------------------------------------------
+#  What is in the package, and what is not
+#  -----------------------------------------------------------------------------
+#
+#  `.next/standalone` already carries the server and its own `node_modules`,
+#  traced down to the files actually reached — so the repository's
+#  `node_modules` is excluded outright. Left in, it would be picked up as the
+#  app's production dependencies and shipped whole: Next, React, the Tailwind
+#  toolchain, every provider's leftovers, several hundred megabytes of things
+#  the running app never opens.
+#
+#  `asar` is off. It exists to make startup marginally faster by packing the
+#  app into one archive, and Electron patches `fs` so most code never notices.
+#
+#  The standalone server is not most code: it resolves its own files at runtime
+#  from paths it built out of `__dirname`, and a require that lands inside the
+#  archive rather than beside it is a class of failure that only appears in the
+#  packaged build, on the machine of whoever installed it. The archive is worth
+#  revisiting once the AppImage has been run — with `asarUnpack` pointed at
+#  `.next/standalone` — but not before.
+# =============================================================================
+
+appId: io.streamly.desktop
+productName: Streamly
+
+directories:
+  output: release
+  buildResources: desktop/resources
+
+asar: false
+
+# Nothing here has a native module, and rebuilding would spend a minute proving
+# it on every pack.
+npmRebuild: false
+
+files:
+  - package.json
+  - desktop/**
+  - .next/standalone/**
+  - '!node_modules/**'
+  - '!**/*.map'
+
+linux:
+  target:
+    - AppImage
+
+  # The freedesktop category, which is what a launcher files it under. Streamly
+  # is a player first and a catalogue second, and `Video` is where someone
+  # looking for it will look.
+  category: AudioVideo
+
+  synopsis: Films, series and subtitles
+  description: >-
+    A catalogue of films and series with Sorani subtitles, running entirely on
+    this machine.
+
+  desktop:
+    entry:
+      # Appended to the generated entry's own keys rather than replacing them.
+      StartupWMClass: Streamly
+
+# `icon` is not named because `directories.buildResources` — `desktop/resources`
+# — is searched for `icon.png` first, and that is where it is. It is a 1024×1024
+# raster generated from the SVG beside it, which is the source: edit
+# `desktop/resources/icon.svg` and re-run the `rsvg-convert` line in
+# `desktop/README.md`. `public/logo.svg` is not it — that is the site's mark and
+# a different drawing.

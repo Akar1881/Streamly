@@ -11,7 +11,7 @@ import { toSlugId } from '@/lib/format';
  *
  *  Two groups:
  *
- *    the fixed pages        — home, the two browse pages, about
+ *    the fixed pages        — home, the two browse pages, settings
  *    popular titles         — pulled from the same TMDB feeds the home page
  *                             already loads, and cached exactly the same way
  *
@@ -42,7 +42,7 @@ const STATIC_PAGES = [
   { path: '/', changeFrequency: 'daily', priority: 1 },
   { path: '/movies', changeFrequency: 'daily', priority: 0.9 },
   { path: '/tv', changeFrequency: 'daily', priority: 0.9 },
-  { path: '/about', changeFrequency: 'monthly', priority: 0.5 },
+  { path: '/settings', changeFrequency: 'monthly', priority: 0.5 },
 ];
 
 /**

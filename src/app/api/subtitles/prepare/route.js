@@ -48,8 +48,20 @@ export const maxDuration = 60;
 /** Nothing here is cacheable — the status is the whole point. */
 const NO_STORE = { 'Cache-Control': 'no-store' };
 
-/** The absolute base a viewer's browser can reach this app on. */
+/**
+ * The absolute base a viewer's browser can reach this app on.
+ *
+ * `NEXT_PUBLIC_SITE_URL` wins, because a deployment knows its own public
+ * address and the request's origin may be an internal one behind a proxy.
+ *
+ * Except in the desktop app, where the port is chosen when the window opens —
+ * a free one, so two copies can run side by side — and the configured URL would
+ * therefore name a port nothing is listening on. There the request's own origin
+ * is not a guess but the only correct answer: it is, by definition, the address
+ * the viewer's browser just reached.
+ */
 function viewerBase(request) {
+  if (process.env.STREAMLY_DESKTOP === '1') return request.nextUrl.origin;
   return process.env.NEXT_PUBLIC_SITE_URL?.trim() || request.nextUrl.origin;
 }
 

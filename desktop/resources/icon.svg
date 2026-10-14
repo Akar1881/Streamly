@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Streamly">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#1e1e1e"/>
+      <stop offset="1" stop-color="#0a0a0a"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c8c8c8"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.075"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="tileClip">
+      <rect width="1024" height="1024" rx="232"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tileClip)">
+    <rect width="1024" height="1024" fill="url(#tile)"/>
+    <!--
+      A highlight in the top-left, fading to nothing rather than ending at an
+      edge — a shape with a boundary is a shape, and this is meant to read as
+      the tile catching light.
+    -->
+    <ellipse cx="256" cy="160" rx="700" ry="520" fill="url(#sheen)"/>
+  </g>
+
+  <!--
+    The S, as two half-turns rather than a letterform.
+
+    Drawn as a path so the icon depends on no font being installed — this
+    rasterises the same on a build machine and on the machine it ships to. Each
+    bowl is a 270° arc of a 140-unit circle, and the tangents where they meet at
+    (512, 512) both run left-to-right, which is what makes the join continuous
+    instead of a corner.
+  -->
+  <path
+    d="M 652 372 A 140 140 0 1 0 512 512 A 140 140 0 1 1 372 652"
+    fill="none"
+    stroke="url(#ink)"
+    stroke-width="84"
+    stroke-linecap="round"
+  />
+
+  <!-- The same hairline the site's own logo carries, for the family resemblance. -->
+  <rect x="8" y="8" width="1008" height="1008" rx="226"
+        fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="16"/>
+</svg>

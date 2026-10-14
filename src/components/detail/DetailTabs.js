@@ -90,7 +90,7 @@ export function ImageGallery({ images, aspect = 'video', emptyLabel = 'No images
     >
       {shown.map((image) => {
         const source =
-          aspect === 'video' ? backdropUrl(image.file_path, 'w780') : posterUrl(image.file_path, 'w342');
+          aspect === 'video' ? backdropUrl(image.file_path) : posterUrl(image.file_path);
 
         return (
           <div
@@ -163,8 +163,8 @@ export function VideoGrid({ videos }) {
         >
           <div className="relative aspect-video">
             {/* Served straight from YouTube's CDN — the global
-                `images.unoptimized` in next.config.mjs keeps it out of
-                Vercel's optimizer, which is why no `unoptimized` prop is
+                `images.unoptimized` in next.config.mjs keeps it out of the
+                image optimizer, which is why no `unoptimized` prop is
                 needed here any more. */}
             <Image
               src={`https://i.ytimg.com/vi/${video.key}/hqdefault.jpg`}

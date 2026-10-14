@@ -1,6 +1,50 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-label="Streamly">
-  <rect width="48" height="48" rx="13" fill="currentColor" fill-opacity="0.1"/>
-  <rect x="0.75" y="0.75" width="46.5" height="46.5" rx="12.25" stroke="currentColor" stroke-opacity="0.22" stroke-width="1.5"/>
-  <path d="M19 15.8c0-1.4 1.5-2.3 2.7-1.6l12.1 7.3c1.2.7 1.2 2.4 0 3.1l-12.1 7.3c-1.2.7-2.7-.2-2.7-1.6V15.8Z" fill="currentColor"/>
-  <path d="M13 18.5v11" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-opacity="0.55"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Streamly">
+  <!--
+    The Streamly mark: the S from the app icon, at 48 units.
+
+    Every colour here is written out rather than left as `currentColor`, and
+    that is deliberate. Next serves this through `images.unoptimized`, so it
+    reaches the page as a bare `<img src="/logo.svg">` — and an SVG loaded that
+    way is its own document. It inherits nothing from the page, so
+    `currentColor` resolves to the initial value, which is black. The previous
+    version of this file used it, which made the mark invisible against the
+    dark sidebar the site opens on. Self-contained colours are the fix, and
+    they are also what makes this file usable as a favicon, where there is no
+    page to inherit from at all.
+
+    The consequence is that the mark does not follow the site's light/dark
+    toggle. It does not need to: the tile is dark and the S is light, so it
+    reads on either background — the tile carries it on light, the S carries it
+    on dark.
+
+    Geometry is the same path as desktop/resources/icon.svg, scaled from that
+    file's 1024 viewBox by 0.046875. Two half-turns of a 140-unit circle whose
+    tangents meet at (512, 512), which is what makes the join read as one
+    stroke rather than two arcs meeting at a corner.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#1e1e1e"/>
+      <stop offset="1" stop-color="#0a0a0a"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c8c8c8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="48" height="48" rx="10.875" fill="url(#tile)"/>
+
+  <path
+    d="M 30.563 17.438 A 6.563 6.563 0 1 0 24 24 A 6.563 6.563 0 1 1 17.438 30.563"
+    fill="none"
+    stroke="url(#ink)"
+    stroke-width="3.938"
+    stroke-linecap="round"
+  />
+
+  <!-- The hairline the app icon carries, which is what separates the tile from
+       a dark sidebar at the sizes this actually renders at. -->
+  <rect x="0.375" y="0.375" width="47.25" height="47.25" rx="10.594"
+        fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="0.75"/>
 </svg>

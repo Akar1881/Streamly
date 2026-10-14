@@ -28,6 +28,7 @@
  */
 
 import site from '@config/site';
+import { getKey } from '@/lib/settings';
 import { SubtitleError } from './error';
 
 const ENDPOINT = 'https://translate-pa.googleapis.com/v1/translate';
@@ -54,9 +55,23 @@ const DIALOGUE_DASH = /^-/;
 /** Cuts after sentence-final punctuation, keeping the mark with its sentence. */
 const SENTENCE_BREAK = /[.?!…؟]+["'»”’)\]]*(?=\s|$)/g;
 
-/** The key, or null when the feature is not configured. */
+/**
+ * The key, or null when the feature is not configured.
+ *
+ * Read through `getKey` alongside every other key rather than off the
+ * environment directly, and specifically *not* listed in `EDITABLE` in
+ * `src/lib/settings.js`. The two go together and only make sense together:
+ * `getKey` resolves all three of its tiers for any name it is given, and
+ * `EDITABLE` decides which names a viewer may write. So this key can come from
+ * the build and from the environment, and can never be set from the interface —
+ * which is the arrangement, rather than the key being special-cased in here.
+ *
+ * It has to come from the build in the desktop app, which has an empty
+ * environment: without that tier the subtitle pipeline would have no key at all
+ * and subtitles would never work on a machine nobody can debug.
+ */
 export function translateKey() {
-  return process.env.TRANSLATE_API_KEY?.trim() || null;
+  return getKey('TRANSLATE_API_KEY');
 }
 
 /**

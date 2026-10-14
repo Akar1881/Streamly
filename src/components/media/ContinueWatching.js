@@ -36,7 +36,7 @@ export default function ContinueWatching() {
           ? `/watch/tv/${toSlugId(item.id, item.title)}/${item.season ?? 1}/${item.episode ?? 1}`
           : `/watch/movie/${toSlugId(item.id, item.title)}`;
 
-        const image = backdropUrl(item.backdropPath, 'w780') ?? posterUrl(item.posterPath);
+        const image = backdropUrl(item.backdropPath) ?? posterUrl(item.posterPath);
 
         // Entries written before the player reported anything have no position
         // and no duration, and there is nothing meaningful to draw for them.

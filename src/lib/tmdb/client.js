@@ -1,4 +1,5 @@
 import site from '@config/site';
+import { getKey } from '@/lib/settings';
 
 /**
  * ============================================================================
@@ -6,7 +7,9 @@ import site from '@config/site';
  * ============================================================================
  *
  *  Every call to TMDB goes through `tmdbFetch`. The API credentials are read
- *  from the environment here and never leave the server:
+ *  from the environment here and never leave the server — unless the viewer has
+ *  supplied their own in the desktop app, in which case theirs is used instead.
+ *  Either way the value stays on this side of the network:
  *
  *    - Server Components import these helpers directly.
  *    - Client Components call `/api/tmdb/...`, which proxies to this file.
@@ -25,14 +28,23 @@ export class TmdbError extends Error {
   }
 }
 
-/** v4 bearer token wins if both are present; either one works alone. */
+/**
+ * v4 bearer token wins if both are present; either one works alone.
+ *
+ * Both come through `getKey`, which prefers a key the viewer set over one in
+ * the environment and answers null when there is neither — see
+ * `src/lib/settings.js`. The precedence above is unchanged by that: it is
+ * between the *two* credentials, not between the two sources, so a viewer who
+ * supplies only a v3 key still gets it used over our token.
+ */
 function credentials() {
-  const token = process.env.TMDB_ACCESS_TOKEN?.trim();
-  const key = process.env.TMDB_API_KEY?.trim();
+  const token = getKey('TMDB_ACCESS_TOKEN');
+  const key = getKey('TMDB_API_KEY');
 
   if (!token && !key) {
     throw new TmdbError(
-      'No TMDB credentials. Copy .env.example to .env.local and set TMDB_API_KEY.',
+      'No TMDB credentials. Set one in Settings, or copy .env.example to .env.local ' +
+        'and set TMDB_API_KEY.',
       500,
     );
   }

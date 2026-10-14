@@ -146,7 +146,7 @@ export default function SearchBar() {
               const isPerson = item.media_type === 'person';
               const image = isPerson
                 ? profileUrl(item.profile_path)
-                : posterUrl(item.poster_path, 'w92');
+                : posterUrl(item.poster_path);
               const label = item.title ?? item.name;
               const meta = isPerson
                 ? item.known_for_department

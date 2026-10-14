@@ -19,12 +19,20 @@
 
 import { parseToVTT, searchSubtitles, withDownloadOptions, WyzieError } from 'wyzie-lib';
 import site from '@config/site';
+import { getKey } from '@/lib/settings';
 import { SubtitleError } from './error';
 import { stripPromoCues } from './promo';
 
-/** Wyzie's key, or null when the site is running without the feature configured. */
+/**
+ * Wyzie's key, or null when the site is running without the feature configured.
+ *
+ * The viewer's own key when they have one — see `src/lib/settings.js`, which is
+ * where the desktop app keeps it. Falling back to ours is what makes subtitles
+ * work on a fresh install, and it is the reason the wizard frames adding a key
+ * as an upgrade rather than a requirement.
+ */
 export function wyzieKey() {
-  return process.env.WYZIE_API_KEY?.trim() || null;
+  return getKey('WYZIE_API_KEY');
 }
 
 /** Formats worth accepting; both parse the same way on our side. */

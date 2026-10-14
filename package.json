@@ -3,14 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "desktop:build": "node scripts/desktop-keys.mjs && STREAMLY_DESKTOP=1 next build && node scripts/desktop-stage.mjs",
+    "desktop:run": "npm run desktop:build && electron .",
+    "desktop:pack": "npm run desktop:build && electron-builder --linux AppImage"
   },
   "dependencies": {
-    "@vercel/blob": "^2.8.1",
     "aws4fetch": "^1.0.20",
     "cheerio-without-node-native": "^0.20.2",
     "hls.js": "^1.7.3",
@@ -22,6 +25,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
     "tailwindcss": "^4.3.3"
   }
 }

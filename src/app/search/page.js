@@ -11,7 +11,7 @@ export const metadata = { title: 'Search' };
 
 /** People need a portrait card rather than a poster. */
 function PersonResult({ person }) {
-  const image = profileUrl(person.profilePath, 'w342');
+  const image = profileUrl(person.profilePath);
 
   return (
     <Link href={`/person/${toSlugId(person.id, person.name)}`} className="group block">

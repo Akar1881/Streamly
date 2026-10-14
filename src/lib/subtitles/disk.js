@@ -7,12 +7,15 @@
  *  to configure, and the files sit where you can open one and read it while
  *  working on the translation itself.
  *
- *  This is what runs on a laptop. It is deliberately *not* what runs in
- *  production, and not for reasons of size: a serverless host gives the app a
- *  read-only bundle and a per-instance `/tmp`, so a file written while serving
- *  one request is not there when the next request lands on a different
- *  instance. The viewer's browser would be handed a URL that 404s. `r2.js` is
- *  the backend that fixes that, and it takes over as soon as it is configured.
+ *  This is what runs on a laptop, and it is what runs in the desktop app —
+ *  `SUBTITLE_CACHE_DIR` points at the app's own data directory there, which is
+ *  a real, persistent, per-user location, so none of the objection below
+ *  applies to it. What it is *not* is a fit for a serverless host: those give
+ *  the app a read-only bundle and a per-instance `/tmp`, so a file written
+ *  while serving one request is not there when the next request lands on a
+ *  different instance, and the viewer's browser would be handed a URL that
+ *  404s. `r2.js` is the backend that fixes that, and it takes over as soon as
+ *  it is configured.
  * ============================================================================
  */
 

@@ -12,7 +12,7 @@
  *  `vidnest.fun` — and, apparently by oversight, `localhost` — while refusing
  *  the domain this site is served from, which is exactly how this was found:
  *  Neon measured 2160p and played on a development machine, showed no quality
- *  at all on Vercel, and played nothing.
+ *  at all from a datacenter host, and played nothing.
  *
  *  None of that is something a browser can work around. `Referer` and `Origin`
  *  are on the forbidden-header list, so `fetch` drops them silently and sends

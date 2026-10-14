@@ -74,7 +74,7 @@ function siteBase() {
  * This exists because a file-based `opengraph-image` only covers the segment it
  * lives in. `src/app/opengraph-image.js` is in the root segment, so it supplies
  * the richer tags on `/` — type, width, height, alt — and outranks the metadata
- * object there. Child routes like `/about` inherit nothing from it, so this
+ * object there. Child routes like `/settings` inherit nothing from it, so this
  * gives them the same card, just with fewer tags. Without it, sharing any page
  * other than the home page produces a bare link with no preview image.
  *

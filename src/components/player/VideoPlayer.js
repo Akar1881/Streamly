@@ -606,23 +606,53 @@ export default function VideoPlayer({
   }, []);
 
   // The shortcuts are bound to the container, so they reach it only while focus
-  // is inside it. Choosing an item from a menu is the other way focus leaves:
-  // the menu closes, the row that was clicked goes with it, and when the focused
-  // element is removed the browser drops focus on the body — after which every
-  // shortcut does nothing until the viewer clicks the picture, which works only
-  // because that focusable container is the nearest focusable ancestor of the
-  // click. So the player puts focus back itself.
+  // is inside it. Choosing an item from a menu is one way focus leaves: the menu
+  // closes, the row that was clicked goes with it, and when the focused element
+  // is removed the browser drops focus on the body — after which every shortcut
+  // does nothing until the viewer clicks the picture, which works only because
+  // that focusable container is the nearest focusable ancestor of the click. So
+  // the player puts focus back itself.
   //
-  // Only when it has actually escaped, so that a click on a control is not
-  // undone a frame later, and `preventScroll` because a control can be focused
-  // from a click on a page scrolled anywhere.
+  // A menu is not the only control that deletes itself out from under the
+  // pointer. The skip button is gone the instant it is clicked, because clicking
+  // it ends the range it was offering, and the centre skips give way to the
+  // buffering spinner whenever the seek they caused has to wait — so the same
+  // removal, the same drop to `body`, and the same keyboard gone dead. Which is
+  // why this watches for the *removal* rather than for the handful of things
+  // that happen to unmount something today: a control added later that can
+  // vanish while it holds focus is covered without anyone having to remember to
+  // come back here.
+  //
+  // `body` on its own is not the signal, though. A viewer who has just clicked
+  // the page around the player is on `body` too, and they are scrolling it, not
+  // watching it — so taking focus back there would turn their arrow keys from a
+  // scroll into a seek. What makes this a drop rather than a move is that the
+  // element which had focus is no longer in the document, and only the player's
+  // own controls ever are. Anyone else's focus is left exactly where they put
+  // it.
+  //
+  // `preventScroll` because a control can be focused from a click on a page
+  // scrolled anywhere.
+  const lastFocused = useRef(null);
+
   useEffect(() => {
     const owner = containerRef.current;
     if (!owner) return;
 
     const active = document.activeElement;
-    if (active === null || active === document.body) owner.focus({ preventScroll: true });
-  }, [menu]);
+    const previous = lastFocused.current;
+    lastFocused.current = active;
+
+    // Someone real has focus. Not ours to take.
+    if (active !== null && active !== document.body) return;
+
+    // Focus is nowhere, but it was not ours to lose: on the first render, or
+    // left on `body` by the viewer's own click on the page. Both are already how
+    // they should be.
+    if (previous && previous.isConnected) return;
+
+    owner.focus({ preventScroll: true });
+  });
 
   /* ---------------------------------------------------------------------- */
   /*  Actions                                                               */

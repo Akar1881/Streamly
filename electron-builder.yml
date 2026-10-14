@@ -41,6 +41,24 @@ asar: false
 # it on every pack.
 npmRebuild: false
 
+#  -----------------------------------------------------------------------------
+#  Publishing: not electron-builder's job — keep it that way
+#  -----------------------------------------------------------------------------
+#
+#  There is deliberately no `publish` key here, and `npm run desktop:pack` passes
+#  `--publish never`. Both are load-bearing.
+#
+#  electron-builder infers a GitHub publisher from `origin` in `.git/config`
+#  when it finds no `repository` field, and on CI — where `isCI` is true and the
+#  build is not on a git tag — it turns that inference into an *implicit* "publish
+#  now". It then demands `GH_TOKEN` and dies with `GitHub Personal Access Token is
+#  not set`, killing a release whose AppImage had already built.
+#
+#  The publishing here belongs to `.github/workflows/release.yml`, which uploads
+#  the finished AppImage with `gh` under its own token. Two systems publishing
+#  the same build would fight over the same release tag.
+#  -----------------------------------------------------------------------------
+
 files:
   - package.json
   - desktop/**

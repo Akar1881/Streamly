@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "main": "desktop/main.cjs",
+  "author": "akar1881",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,7 +12,7 @@
     "lint": "next lint",
     "desktop:build": "node scripts/desktop-keys.mjs && STREAMLY_DESKTOP=1 next build && node scripts/desktop-stage.mjs",
     "desktop:run": "npm run desktop:build && electron .",
-    "desktop:pack": "npm run desktop:build && electron-builder --linux AppImage"
+    "desktop:pack": "npm run desktop:build && electron-builder --linux AppImage --publish never"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",

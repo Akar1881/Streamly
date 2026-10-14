@@ -81,7 +81,14 @@ async function followRedirect(url, signal) {
     await response.body?.cancel();
 
     return response.url && response.url !== url ? response.url : null;
-  } catch {
+  } catch (cause) {
+    // Swallowed, but not silently. Every way this can go wrong ends in the same
+    // `null` as a hop that simply found nothing, and the consequence is the same
+    // either way — the page falls back and the viewer is told this source does
+    // not have the title. That leaves one line of trace and this is it: a CORS
+    // refusal, a dead connection and a cancelled request are indistinguishable
+    // from a miss without it, and they have three different fixes.
+    console.warn(`[himovies] the redirect from ${url} went nowhere:`, cause);
     return null;
   }
 }

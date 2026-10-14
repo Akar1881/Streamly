@@ -5,6 +5,7 @@ import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import Footer from './Footer';
 import MobileNav from './MobileNav';
+import DesktopUpdatePrompt from '@/components/media/DesktopUpdatePrompt';
 
 /**
  * The frame every page sits inside.
@@ -56,6 +57,7 @@ export default function AppShell({ children }) {
       </div>
 
       <MobileNav />
+      <DesktopUpdatePrompt />
     </div>
   );
 }

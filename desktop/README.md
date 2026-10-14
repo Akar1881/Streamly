@@ -137,4 +137,6 @@ one-evening job rather than a rewrite.
 be shipped as a library (`nodejs-mobile`) because an app cannot execute anything
 from inside its own bundle. Feasible; unrelated to this directory.
 
-**Auto-updates.** Nothing here updates itself. A new AppImage is a new download.
+**Update checks.** The desktop app checks GitHub's `latest` tag on launch and
+offers a link when that tag points to a newer commit. It does not download or
+install updates itself; download the new AppImage from the update page.

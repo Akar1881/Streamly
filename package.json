@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "desktop:build": "node scripts/desktop-keys.mjs && STREAMLY_DESKTOP=1 next build && node scripts/desktop-stage.mjs",
+    "desktop:build": "node scripts/desktop-keys.mjs && NEXT_PUBLIC_STREAMLY_DESKTOP=1 NEXT_PUBLIC_STREAMLY_BUILD_SHA=$(git rev-parse HEAD 2>/dev/null || printf unknown) STREAMLY_DESKTOP=1 next build && node scripts/desktop-stage.mjs",
     "desktop:run": "npm run desktop:build && electron .",
     "desktop:pack": "npm run desktop:build && electron-builder --linux AppImage --publish never"
   },

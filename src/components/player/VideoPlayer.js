@@ -308,6 +308,7 @@ export default function VideoPlayer({
 
     const handle = attachSource(video, sourceSrc, {
       type: sourceType,
+      providerId,
       headers: latestSource.current?.headers,
       onEngine: setEngine,
       onAudio: setAudio,

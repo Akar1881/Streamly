@@ -211,7 +211,7 @@ function headerConfig(headers) {
  * @param {(error: Error) => void} [handlers.onError]
  * @returns {{ dispose: () => void, setLevel: (index: number|null) => void, setAudioTrack: (id: number) => void }}
  */
-export function attachSource(video, src, { type, headers, onEngine, onAudio, onError } = {}) {
+export function attachSource(video, src, { type, providerId, headers, onEngine, onAudio, onError } = {}) {
   let disposed = false;
   let hls = null;
   let elementAudio = null;
@@ -321,11 +321,11 @@ export function attachSource(video, src, { type, headers, onEngine, onAudio, onE
         // Let hls.js choose from measured segment throughput, rather than
         // pinning the highest rendition before the connection is known.
         startLevel: -1,
-        // Keep the target near hls.js defaults so playback does not accumulate
-        // an unnecessarily large buffer reserve.
-        maxBufferLength: 30,
-        maxMaxBufferLength: 90,
-        maxBufferSize: 60 * 1000 * 1000,
+        // VidNest benefits from a smaller reserve; other providers retain the
+        // larger buffer target that was in place before VidNest was tuned.
+        maxBufferLength: providerId === 'vidnest' ? 30 : 90,
+        maxMaxBufferLength: providerId === 'vidnest' ? 90 : 300,
+        maxBufferSize: providerId === 'vidnest' ? 60 * 1000 * 1000 : 200 * 1000 * 1000,
         enableWorker: true,
         ...headerConfig(headers),
       });

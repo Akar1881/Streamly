@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDownToLine, ArrowUpRight, Check, LoaderCircle, Sparkles, X } from 'lucide-react';
 
-const RELEASE_URL = 'https://github.com/Akar1881/Streamly/releases/tag/latest';
+const RELEASE_URL = 'https://github.com/Akar1881/Streamly/releases/latest';
 
 export default function DesktopUpdatePrompt() {
   const [update, setUpdate] = useState(null);

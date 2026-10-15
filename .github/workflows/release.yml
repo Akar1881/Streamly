@@ -3,7 +3,8 @@
 # =============================================================================
 #
 #  Every push to `main` builds a Linux AppImage and Windows installer, then
-#  replaces the assets on a rolling `latest` release after both builds succeed.
+#  creates a versioned release after both builds succeed. Older releases remain
+#  available, and the newest release is marked latest for update checks.
 #
 #  ---------------------------------------------------------------------------
 #  The four secrets, and what publishing them means
@@ -42,9 +43,8 @@ permissions:
 concurrency:
   group: release-${{ github.ref }}
   # Not `cancel-in-progress`: a cancelled run can be killed partway through
-  # uploading a 134 MB file, which leaves a truncated download behind until the
-  # next build replaces it. Queuing costs a few minutes and always ends with
-  # the newest successful commit published.
+  # uploading a 134 MB file. Queuing costs a few minutes and keeps release
+  # creation ordered.
   cancel-in-progress: false
 
 jobs:
@@ -140,7 +140,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish rolling release
+    name: Publish versioned release
     needs: [appimage, windows]
     runs-on: ubuntu-latest
 
@@ -185,17 +185,18 @@ jobs:
         run: |
           set -euo pipefail
 
+          tag="v${VERSION}"
           short="${SHA:0:7}"
           subject="$(git log -1 --pretty=%s)"
           notes="$(printf '%s\n\n%s\n%s\n' \
             "$short — $subject" \
             "Commit: https://github.com/${GITHUB_REPOSITORY}/commit/${SHA}" \
-            "Rolling release for Linux AppImage and Windows installer. New successful builds replace these assets.")"
+            "Streamly ${VERSION} for Linux and Windows.")"
 
-          if gh release view latest >/dev/null 2>&1; then
-            gh release edit latest --title "Streamly ${VERSION}" --notes "$notes"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "Streamly ${VERSION}" --notes "$notes" --latest
           else
-            gh release create latest --title "Streamly ${VERSION}" --notes "$notes"
+            gh release create "$tag" --target "$SHA" --title "Streamly ${VERSION}" --notes "$notes" --latest
           fi
 
-          gh release upload latest release/* --clobber
+          gh release upload "$tag" release/* --clobber

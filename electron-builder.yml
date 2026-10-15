@@ -50,7 +50,7 @@ npmRebuild: false
 #  the workflow uploads the AppImage and generated `latest-linux.yml` together.
 #
 #  Keeping upload ownership in one place avoids electron-builder racing the
-#  workflow to replace assets on the rolling `latest` release.
+#  workflow to publish each version's assets to its own tagged release.
 #  -----------------------------------------------------------------------------
 publish:
   - provider: github

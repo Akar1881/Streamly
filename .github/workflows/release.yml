@@ -96,7 +96,6 @@ jobs:
           name: linux-release-assets
           path: |
             release/*.AppImage
-            release/*.AppImage.blockmap
             release/latest-linux.yml
           if-no-files-found: error
 
@@ -135,7 +134,6 @@ jobs:
           name: windows-release-assets
           path: |
             release/Streamly-Setup-*.exe
-            release/Streamly-Setup-*.exe.blockmap
             release/latest.yml
           if-no-files-found: error
 
@@ -235,7 +233,7 @@ jobs:
           name: macos-arm64-release-assets
           path: release
 
-      - name: Verify artifacts and create checksums
+      - name: Verify release assets
         run: |
           set -euo pipefail
           test -f "release/Streamly-${VERSION}.AppImage"
@@ -244,10 +242,6 @@ jobs:
           test -f "release/Streamly-${VERSION}-arm64.dmg"
           test -f release/latest-linux.yml
           test -f release/latest.yml
-          ( cd release && sha256sum "Streamly-${VERSION}.AppImage" > "Streamly-${VERSION}.AppImage.sha256" )
-          ( cd release && sha256sum "Streamly-Setup-${VERSION}.exe" > "Streamly-Setup-${VERSION}.exe.sha256" )
-          ( cd release && sha256sum "Streamly-${VERSION}-x64.dmg" > "Streamly-${VERSION}-x64.dmg.sha256" )
-          ( cd release && sha256sum "Streamly-${VERSION}-arm64.dmg" > "Streamly-${VERSION}-arm64.dmg.sha256" )
 
       - name: Publish
         env:

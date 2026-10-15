@@ -13,7 +13,8 @@
     "desktop:build": "node scripts/desktop-keys.mjs && cross-env STREAMLY_DESKTOP=1 next build && node scripts/desktop-stage.mjs",
     "desktop:run": "npm run desktop:build && electron .",
     "desktop:pack": "npm run desktop:build && electron-builder --linux AppImage --publish never",
-    "desktop:pack:win": "npm run desktop:build && electron-builder --win nsis --publish never"
+    "desktop:pack:win": "npm run desktop:build && electron-builder --win nsis --publish never",
+    "desktop:pack:mac": "npm run desktop:build && electron-builder --mac dmg --publish never"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",

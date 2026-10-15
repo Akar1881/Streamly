@@ -29,7 +29,11 @@ mostly the data directory and the first-run screen.
 ```sh
 npm run desktop:pack       # Linux AppImage
 npm run desktop:pack:win   # Windows NSIS installer
+npm run desktop:pack:mac   # unsigned macOS DMG
 ```
+
+macOS releases are unsigned for manual installation only. Gatekeeper may block
+the first launch; Control-click the app and choose **Open** to confirm.
 
 The Linux command writes `release/Streamly-0.1.0.AppImage` — about 134 MB,
 almost all of it the browser and the Node runtime it carries. Run it directly:

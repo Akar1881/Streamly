@@ -108,6 +108,15 @@ win:
   artifactName: Streamly-Setup-${version}.${ext}
   verifyUpdateCodeSignature: false
 
+mac:
+  target:
+    - dmg
+  icon: desktop/resources/icon.icns
+  artifactName: Streamly-${version}-${arch}.${ext}
+  identity: null
+  hardenedRuntime: false
+  notarize: false
+
 nsis:
   oneClick: true
   perMachine: false

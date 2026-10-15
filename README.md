@@ -7,6 +7,10 @@ you and the video.
 
 [![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](../../releases/latest)
 [![Download for Linux](https://img.shields.io/badge/Download-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](../../releases/latest)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS-555555?style=for-the-badge&logo=apple&logoColor=white)](../../releases/latest)
+
+macOS builds are unsigned DMGs. On first launch, macOS may require you to
+Control-click the app and choose **Open** to confirm you want to run it.
 
 <img width="1920" height="941" alt="Streamly" src="https://github.com/user-attachments/assets/dcf5ad83-13a1-4234-8979-1b4c15c96dfb" />
 

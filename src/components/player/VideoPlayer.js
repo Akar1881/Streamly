@@ -208,6 +208,7 @@ export default function VideoPlayer({
   const touch = useRef(false); // the pointer in play is a finger, not a mouse
   const trackChosen = useRef(false); // the viewer picked a track, or turned them off
   const latestSource = useRef(null); // the source object, read when it is attached
+  const pendingSourcePlayback = useRef(null);
 
   // --- the element, and what it is playing --------------------------------
   const [video, setVideo] = useState(null);
@@ -302,6 +303,9 @@ export default function VideoPlayer({
   useEffect(() => {
     if (!video || !sourceSrc) return undefined;
 
+    const pendingPlayback = pendingSourcePlayback.current;
+    let restorePlayback = null;
+
     const handle = attachSource(video, sourceSrc, {
       type: sourceType,
       headers: latestSource.current?.headers,
@@ -318,6 +322,27 @@ export default function VideoPlayer({
     });
 
     sourceRef.current = handle;
+
+    if (pendingPlayback) {
+      restorePlayback = () => {
+        video.removeEventListener('loadedmetadata', restorePlayback);
+        if (pendingSourcePlayback.current !== pendingPlayback) return;
+
+        if (pendingPlayback.time > 0) {
+          const lastPlayableTime = Number.isFinite(video.duration)
+            ? Math.max(0, video.duration - 0.25)
+            : pendingPlayback.time;
+          video.currentTime = Math.min(pendingPlayback.time, lastPlayableTime);
+        }
+
+        pendingSourcePlayback.current = null;
+        if (pendingPlayback.wasPlaying) video.play().catch(() => {});
+      };
+
+      video.addEventListener('loadedmetadata', restorePlayback);
+      if (video.readyState >= 1) restorePlayback();
+    }
+
     setError(null);
     // A different stream has not painted anything yet, so its poster goes back
     // up — otherwise switching source leaves the old film's last frame on
@@ -325,6 +350,13 @@ export default function VideoPlayer({
     setStarted(false);
 
     return () => {
+      if (restorePlayback) video.removeEventListener('loadedmetadata', restorePlayback);
+      if (!pendingSourcePlayback.current) {
+        pendingSourcePlayback.current = {
+          time: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+          wasPlaying: !video.paused && !video.ended,
+        };
+      }
       handle.dispose();
       sourceRef.current = null;
     };

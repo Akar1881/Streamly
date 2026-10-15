@@ -103,6 +103,12 @@ function configureUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
 
+  if (process.platform === 'linux') {
+    autoUpdater.on('appimage-filename-updated', (filePath) => {
+      process.env.APPIMAGE = filePath;
+    });
+  }
+
   autoUpdater.on('update-available', (info) => {
     publishUpdateState({ status: 'available', version: info.version });
   });

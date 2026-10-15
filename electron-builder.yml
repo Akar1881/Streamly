@@ -42,28 +42,44 @@ asar: false
 npmRebuild: false
 
 #  -----------------------------------------------------------------------------
-#  Publishing: not electron-builder's job — keep it that way
+#  Publishing: metadata here, uploads in the GitHub workflow
 #  -----------------------------------------------------------------------------
 #
-#  There is deliberately no `publish` key here, and `npm run desktop:pack` passes
-#  `--publish never`. Both are load-bearing.
+#  This provider config is embedded in the app and tells electron-updater where
+#  to check. `--publish never` keeps electron-builder from uploading anything;
+#  the workflow uploads the AppImage and generated `latest-linux.yml` together.
 #
-#  electron-builder infers a GitHub publisher from `origin` in `.git/config`
-#  when it finds no `repository` field, and on CI — where `isCI` is true and the
-#  build is not on a git tag — it turns that inference into an *implicit* "publish
-#  now". It then demands `GH_TOKEN` and dies with `GitHub Personal Access Token is
-#  not set`, killing a release whose AppImage had already built.
-#
-#  The publishing here belongs to `.github/workflows/release.yml`, which uploads
-#  the finished AppImage with `gh` under its own token. Two systems publishing
-#  the same build would fight over the same release tag.
+#  Keeping upload ownership in one place avoids electron-builder racing the
+#  workflow to replace assets on the rolling `latest` release.
 #  -----------------------------------------------------------------------------
+publish:
+  - provider: github
+    owner: Akar1881
+    repo: Streamly
+    releaseType: release
 
 files:
   - package.json
   - desktop/**
   - .next/standalone/**
   - '!node_modules/**'
+  - 'node_modules/electron-updater/**'
+  - 'node_modules/builder-util-runtime/**'
+  - 'node_modules/fs-extra/**'
+  - 'node_modules/js-yaml/**'
+  - 'node_modules/lazy-val/**'
+  - 'node_modules/lodash.escaperegexp/**'
+  - 'node_modules/lodash.isequal/**'
+  - 'node_modules/semver/**'
+  - 'node_modules/tiny-typed-emitter/**'
+  - 'node_modules/argparse/**'
+  - 'node_modules/debug/**'
+  - 'node_modules/graceful-fs/**'
+  - 'node_modules/jsonfile/**'
+  - 'node_modules/ms/**'
+  - 'node_modules/sax/**'
+  - 'node_modules/universalify/**'
+  - '.next/standalone/node_modules/**'
   - '!**/*.map'
 
 linux:

@@ -143,6 +143,10 @@ one-evening job rather than a rewrite.
 be shipped as a library (`nodejs-mobile`) because an app cannot execute anything
 from inside its own bundle. Feasible; unrelated to this directory.
 
-**Update checks.** The desktop app checks GitHub's `latest` tag on launch and
-offers a link when that tag points to a newer commit. It does not download or
-install updates itself; download the new AppImage from the update page.
+**Updates.** Packaged Linux AppImages check the GitHub `latest` release on
+launch. The update dialog downloads the new AppImage and offers to restart and
+install it. The release workflow assigns each build a higher version and
+publishes electron-builder's `latest-linux.yml` beside the AppImage. Other Linux
+package formats are not built or updated by this workflow. The first updater-
+enabled AppImage must be downloaded manually because earlier builds only linked
+to the release page.

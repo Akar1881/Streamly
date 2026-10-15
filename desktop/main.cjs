@@ -54,7 +54,8 @@
 
 'use strict';
 
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
@@ -78,6 +79,83 @@ const PORT = 43127;
 
 /** How long the window waits for the server before giving up and saying so. */
 const STARTUP_TIMEOUT_MS = 30_000;
+const UPDATE_STATE_CHANNEL = 'streamly-update:state';
+
+let updateState = { status: 'idle' };
+let updateHandlersRegistered = false;
+
+function publishUpdateState(nextState) {
+  updateState = nextState;
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(UPDATE_STATE_CHANNEL, updateState);
+  }
+}
+
+/** Configure updates only for the Linux AppImage target we actually ship. */
+function configureAppImageUpdater() {
+  if (process.platform !== 'linux' || !app.isPackaged || !process.env.APPIMAGE) {
+    return false;
+  }
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on('update-available', (info) => {
+    publishUpdateState({ status: 'available', version: info.version });
+  });
+  autoUpdater.on('update-not-available', () => {
+    publishUpdateState({ status: 'current' });
+  });
+  autoUpdater.on('download-progress', (progress) => {
+    publishUpdateState({
+      status: 'downloading',
+      version: updateState.version,
+      percent: Math.round(progress.percent),
+    });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    publishUpdateState({ status: 'downloaded', version: info.version });
+  });
+  autoUpdater.on('error', (cause) => {
+    if (['available', 'downloading'].includes(updateState.status)) {
+      publishUpdateState({
+        status: 'error',
+        version: updateState.version,
+        message: String(cause?.message ?? cause),
+      });
+    } else {
+      console.warn('[updater] Update check failed:', cause);
+    }
+  });
+
+  if (!updateHandlersRegistered) {
+    ipcMain.handle('streamly-update:get-state', () => updateState);
+    ipcMain.handle('streamly-update:download', async () => {
+      if (!['available', 'error'].includes(updateState.status)) return false;
+      const version = updateState.version;
+      publishUpdateState({ status: 'downloading', version, percent: 0 });
+      try {
+        await autoUpdater.downloadUpdate();
+        return true;
+      } catch (cause) {
+        publishUpdateState({
+          status: 'error',
+          version,
+          message: String(cause?.message ?? cause),
+        });
+        return false;
+      }
+    });
+    ipcMain.handle('streamly-update:install', () => {
+      if (updateState.status !== 'downloaded') return false;
+      autoUpdater.quitAndInstall(false, true);
+      return true;
+    });
+    updateHandlersRegistered = true;
+  }
+
+  return true;
+}
 
 /** Check the stable app port before starting Next, without taking it over. */
 function canUsePort(port) {
@@ -168,6 +246,7 @@ function createWindow(base) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.cjs'),
 
       /**
        * A video is the one thing that should not be paused because the viewer
@@ -296,7 +375,13 @@ async function main() {
     return;
   }
 
+  const canUpdate = configureAppImageUpdater();
   createWindow(base);
+  if (canUpdate) {
+    autoUpdater.checkForUpdates().catch((cause) => {
+      console.warn('[updater] Update check failed:', cause);
+    });
+  }
 }
 
 /**

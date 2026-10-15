@@ -76,6 +76,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
 
+      - name: Set release version
+        run: |
+          version="$(node -p "const [major, minor] = require('./package.json').version.split('.'); major + '.' + minor + '.' + process.env.GITHUB_RUN_NUMBER")"
+          npm version "$version" --no-git-tag-version
+
       - name: Build the AppImage
         # The four names have to match `NAMES` in scripts/desktop-keys.mjs.
         # An unset secret expands to an empty string, which the script treats
@@ -102,6 +107,12 @@ jobs:
             exit 1
           fi
 
+          metadata="release/latest-linux.yml"
+          if [ ! -f "$metadata" ]; then
+            echo "::error::electron-builder produced no AppImage update metadata at $metadata"
+            exit 1
+          fi
+
           # A checksum beside the binary, so a download can be verified without
           # trusting the transfer that delivered it.
           ( cd release && sha256sum "$(basename "$asset")" > "$(basename "$asset").sha256" )
@@ -119,7 +130,6 @@ jobs:
             gh release create latest --title "Streamly ${version}" --notes "$notes"
           fi
 
-          # `--clobber` replaces the previous asset, which is the whole point of
-          # a rolling release. The checksum is uploaded with it so the two can
-          # never be a build apart.
-          gh release upload latest "$asset" "${asset}.sha256" --clobber
+          # `--clobber` replaces the rolling assets and update manifest together,
+          # so the updater never sees metadata for a different AppImage build.
+          gh release upload latest "$asset" "${asset}.sha256" "$metadata" --clobber

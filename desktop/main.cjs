@@ -73,26 +73,20 @@ const SERVER = path.join(ROOT, '.next', 'standalone', 'server.js');
  */
 const HOST = '127.0.0.1';
 
+/** A stable origin is required: Chromium localStorage is partitioned by port. */
+const PORT = 43127;
+
 /** How long the window waits for the server before giving up and saying so. */
 const STARTUP_TIMEOUT_MS = 30_000;
 
-/**
- * A port nothing else is using.
- *
- * Asked for by binding port 0 and reading back what the OS chose, then closed —
- * so there is a theoretical race between the close and the server's own bind.
- * The alternative is a fixed port, which fails outright whenever a second copy
- * is started, or whenever anything else on the machine has taken it. A race
- * this narrow against a failure that common is the right way round.
- */
-function freePort() {
-  return new Promise((resolve, reject) => {
+/** Check the stable app port before starting Next, without taking it over. */
+function canUsePort(port) {
+  return new Promise((resolve) => {
     const probe = net.createServer();
     probe.unref();
-    probe.on('error', reject);
-    probe.listen(0, HOST, () => {
-      const { port } = probe.address();
-      probe.close(() => resolve(port));
+    probe.once('error', () => resolve(false));
+    probe.listen(port, HOST, () => {
+      probe.close(() => resolve(true));
     });
   });
 }
@@ -239,7 +233,18 @@ async function main() {
    * same key file rather than two.
    */
   const dataDir = app.getPath('userData');
-  const port = await freePort();
+  const port = PORT;
+
+  if (!(await canUsePort(port))) {
+    dialog.showErrorBox(
+      'Streamly could not start',
+      `The local port ${port} is already in use. Close the other app using it and ` +
+        'try again. Streamly needs this fixed port to keep your saved watch ' +
+        'progress and settings available between launches.',
+    );
+    app.exit(1);
+    return;
+  }
 
   process.env.NODE_ENV = 'production';
   process.env.PORT = String(port);

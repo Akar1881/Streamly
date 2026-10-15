@@ -92,6 +92,12 @@ in `package.json` rather than from the `productName` the packer uses:
 Deleting the directory resets the app completely — it will open the first-run
 screen again, on the built-in keys, and re-download any subtitles it needs.
 
+Continue Watching, My List, and player preferences are stored in Chromium's
+browser storage inside this profile. The desktop app uses the fixed local port
+`43127` so Chromium sees the same origin after every launch; changing the port
+would make those saves appear to vanish. Saves made by older builds that used
+a random port are not automatically imported into the fixed-port origin.
+
 ## The built-in keys
 
 The first-run screen offers a choice: paste your own keys, or use the ones

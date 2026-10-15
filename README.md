@@ -5,6 +5,9 @@ machine. Metadata comes from **TMDB**, playback is handed to a third-party
 embed provider, and the app relays nothing — there is no server sitting between
 you and the video.
 
+[![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](../../releases/latest)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](../../releases/latest)
+
 <img width="1920" height="941" alt="Streamly" src="https://github.com/user-attachments/assets/dcf5ad83-13a1-4234-8979-1b4c15c96dfb" />
 
 ## What it is

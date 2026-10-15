@@ -155,7 +155,7 @@ export default function DesktopUpdatePrompt() {
                 : downloading
                   ? `Downloading Streamly ${update.version}. You can keep using the app while it finishes.`
                   : failed
-                    ? 'Check your connection and try the download again, or get the AppImage from GitHub.'
+                    ? 'Check your connection and try again, or download the latest installer from GitHub.'
                     : `Streamly ${update.version} is available. Download it now; your library and settings stay on this device.`}
             </p>
             {downloading && (

@@ -21,7 +21,12 @@ billed and blocked. Run locally there is nothing to relay.
 
 ## Install
 
-Download the AppImage from the [latest release](../../releases/latest):
+Download the installer for your platform from the [latest release](../../releases/latest).
+
+**Windows:** download `Streamly-Setup-<version>.exe` and run the installer.
+Windows may display a SmartScreen warning because the installer is not code-signed.
+
+**Linux:** download the `Streamly-<version>.AppImage`, then run:
 
 ```sh
 chmod +x Streamly-*.AppImage
@@ -43,6 +48,10 @@ The first launch asks whether you want to add your own TMDB and Wyzie keys. It
 is optional — the built-in keys work and skipping is fine — but your own are
 faster, and not shared with anyone else.
 
+The desktop app checks for updates on launch. Install the latest release
+manually the first time; later updates can be downloaded and installed from the
+in-app update prompt.
+
 ## Build it yourself
 
 ```sh
@@ -51,6 +60,7 @@ cp .env.example .env.local     # then fill in your keys
 npm run dev                    # the web app, on http://localhost:3000
 npm run desktop:run            # the same app in an Electron window
 npm run desktop:pack           # release/Streamly-<version>.AppImage
+npm run desktop:pack:win       # release/Streamly-Setup-<version>.exe
 ```
 
 [.env.example](.env.example) lists every variable and where to get each key.

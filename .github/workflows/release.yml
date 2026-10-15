@@ -1,27 +1,25 @@
 # =============================================================================
-#  RELEASE — build the Linux app, publish it when the build succeeds
+#  RELEASE — build Linux and Windows apps, publish them when both succeed
 # =============================================================================
 #
-#  Every push to `main` builds the AppImage and, if it builds, replaces the
-#  asset on a rolling `latest` release. One download link that always means
-#  "the newest commit that compiled", which is what a download link should be.
+#  Every push to `main` builds a Linux AppImage and Windows installer, then
+#  replaces the assets on a rolling `latest` release after both builds succeed.
 #
 #  ---------------------------------------------------------------------------
 #  The four secrets, and what publishing them means
 #  ---------------------------------------------------------------------------
 #
 #  `scripts/desktop-keys.mjs` reads these four from the environment and writes
-#  them into `desktop/builtin-keys.json`, which ships inside the AppImage. That
-#  file is what makes the app work before anyone has entered a key of their own
-#  — the first-run screen offers "or use the built-in keys", and this is where
-#  those come from.
+#  them into `desktop/builtin-keys.json`, which ships inside both installers.
+#  That file is what makes the app work before anyone has entered a key of their
+#  own — the first-run screen offers "or use the built-in keys", and this is
+#  where those come from.
 #
-#  It also means **anyone who downloads the AppImage from Releases can read all
-#  four out of it.** For a public repository that is anyone at all. The
+#  It also means **anyone who downloads a release can read all four keys out of
+#  either installer.** For a public repository that is anyone at all. The
 #  translator's key is the one to think about, because it is billed per use.
-#  The mitigations are to make the repository private, or to leave the secrets
-#  unset — in which case the build still succeeds and the first-run screen asks
-#  each viewer for their own keys instead.
+#  Leave the secrets unset if they should not be distributed; the build still
+#  succeeds and the first-run screen asks each viewer for their own keys.
 #
 #  Set them under Settings → Secrets and variables → Actions → New repository
 #  secret, with exactly these names.
@@ -51,7 +49,7 @@ concurrency:
 
 jobs:
   appimage:
-    name: Build and publish
+    name: Build Linux AppImage
     runs-on: ubuntu-latest
 
     steps:
@@ -92,6 +90,94 @@ jobs:
           TRANSLATE_API_KEY: ${{ secrets.TRANSLATE_API_KEY }}
         run: npm run desktop:pack
 
+      - name: Upload Linux build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-assets
+          path: |
+            release/*.AppImage
+            release/*.AppImage.blockmap
+            release/latest-linux.yml
+          if-no-files-found: error
+
+  windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set release version
+        shell: bash
+        run: |
+          version="$(node -p "const [major, minor] = require('./package.json').version.split('.'); major + '.' + minor + '.' + process.env.GITHUB_RUN_NUMBER")"
+          npm version "$version" --no-git-tag-version
+
+      - name: Build Windows installer
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TMDB_ACCESS_TOKEN: ${{ secrets.TMDB_ACCESS_TOKEN }}
+          WYZIE_API_KEY: ${{ secrets.WYZIE_API_KEY }}
+          TRANSLATE_API_KEY: ${{ secrets.TRANSLATE_API_KEY }}
+        run: npm run desktop:pack:win
+
+      - name: Upload Windows build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-assets
+          path: |
+            release/Streamly-Setup-*.exe
+            release/Streamly-Setup-*.exe.blockmap
+            release/latest.yml
+          if-no-files-found: error
+
+  publish:
+    name: Publish rolling release
+    needs: [appimage, windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set release version
+        run: |
+          version="$(node -p "const [major, minor] = require('./package.json').version.split('.'); major + '.' + minor + '.' + process.env.GITHUB_RUN_NUMBER")"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Download Linux build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-release-assets
+          path: release
+
+      - name: Download Windows build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release-assets
+          path: release
+
+      - name: Verify artifacts and create checksums
+        run: |
+          set -euo pipefail
+          test -f "release/Streamly-${VERSION}.AppImage"
+          test -f "release/Streamly-Setup-${VERSION}.exe"
+          test -f release/latest-linux.yml
+          test -f release/latest.yml
+          ( cd release && sha256sum "Streamly-${VERSION}.AppImage" > "Streamly-${VERSION}.AppImage.sha256" )
+          ( cd release && sha256sum "Streamly-Setup-${VERSION}.exe" > "Streamly-Setup-${VERSION}.exe.sha256" )
+
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,37 +185,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          version="$(node -p "require('./package.json').version")"
-          asset="release/Streamly-${version}.AppImage"
-
-          if [ ! -f "$asset" ]; then
-            echo "::error::electron-builder produced no AppImage at $asset"
-            exit 1
-          fi
-
-          metadata="release/latest-linux.yml"
-          if [ ! -f "$metadata" ]; then
-            echo "::error::electron-builder produced no AppImage update metadata at $metadata"
-            exit 1
-          fi
-
-          # A checksum beside the binary, so a download can be verified without
-          # trusting the transfer that delivered it.
-          ( cd release && sha256sum "$(basename "$asset")" > "$(basename "$asset").sha256" )
-
           short="${SHA:0:7}"
           subject="$(git log -1 --pretty=%s)"
           notes="$(printf '%s\n\n%s\n%s\n' \
             "$short — $subject" \
             "Commit: https://github.com/${GITHUB_REPOSITORY}/commit/${SHA}" \
-            "This is a rolling release: the asset below is replaced by every successful build on \`main\`.")"
+            "Rolling release for Linux AppImage and Windows installer. New successful builds replace these assets.")"
 
           if gh release view latest >/dev/null 2>&1; then
-            gh release edit latest --title "Streamly ${version}" --notes "$notes"
+            gh release edit latest --title "Streamly ${VERSION}" --notes "$notes"
           else
-            gh release create latest --title "Streamly ${version}" --notes "$notes"
+            gh release create latest --title "Streamly ${VERSION}" --notes "$notes"
           fi
 
-          # `--clobber` replaces the rolling assets and update manifest together,
-          # so the updater never sees metadata for a different AppImage build.
-          gh release upload latest "$asset" "${asset}.sha256" "$metadata" --clobber
+          gh release upload latest release/* --clobber

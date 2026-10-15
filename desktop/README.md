@@ -24,14 +24,15 @@ npm run desktop:run  # build, then open the window
 the shell only matters for things that are true of a packaged app, which is
 mostly the data directory and the first-run screen.
 
-## Building an AppImage
+## Building a release package
 
 ```sh
-npm run desktop:pack
+npm run desktop:pack       # Linux AppImage
+npm run desktop:pack:win   # Windows NSIS installer
 ```
 
-That writes `release/Streamly-0.1.0.AppImage` — about 134 MB, almost all of it
-the browser and the Node runtime it carries. Run it directly:
+The Linux command writes `release/Streamly-0.1.0.AppImage` — about 134 MB,
+almost all of it the browser and the Node runtime it carries. Run it directly:
 
 ```sh
 ./release/Streamly-0.1.0.AppImage
@@ -116,37 +117,35 @@ If the build warns that a key is missing, the app still builds and runs — but 
 viewer who skips the first-run screen will have nothing behind that choice, and
 nothing on screen will say so. Fill in `.env.local` and build again.
 
-**Anyone who has the AppImage can read those keys out of it.** That is the
-accepted trade for the app working out of the box; it is the same exposure a
-browser extension with a bundled key has.
+**Anyone who downloads either installer can read those keys out of it.** That
+is the accepted trade for the app working out of the box; it is the same
+exposure a browser extension with a bundled key has.
 
 ## The icon
 
-[resources/icon.svg](resources/icon.svg) is the source; `resources/icon.png` is
-what gets packed, and is generated from it:
+[resources/icon.svg](resources/icon.svg) is the source. `resources/icon.png` is
+used on Linux; `resources/icon.ico` is the Windows installer icon. Generate
+them from the source with:
 
 ```sh
 cd desktop/resources && rsvg-convert -w 1024 -h 1024 icon.svg -o icon.png
+magick icon.png -define icon:auto-resize=256,128,64,48,32,16 icon.ico
 ```
 
-electron-builder picks up `icon.png` from `resources/` without being told where
-it is. It has to be a raster: the packer needs several sizes and does not read
-SVG.
+electron-builder picks up the Linux `icon.png` from `resources/`; the Windows
+NSIS configuration points directly to `icon.ico`.
 
 ## What is not here yet
-
-**Windows.** `main.cjs` is platform-neutral and the builder config only needs
-`--win` added to `desktop:pack`, but nobody has run it. It should be a
-one-evening job rather than a rewrite.
 
 **Android.** A different problem — no Electron, and a Node runtime that has to
 be shipped as a library (`nodejs-mobile`) because an app cannot execute anything
 from inside its own bundle. Feasible; unrelated to this directory.
 
-**Updates.** Packaged Linux AppImages check the GitHub `latest` release on
-launch. The update dialog downloads the new AppImage and offers to restart and
-install it. The release workflow assigns each build a higher version and
-publishes electron-builder's `latest-linux.yml` beside the AppImage. Other Linux
-package formats are not built or updated by this workflow. The first updater-
-enabled AppImage must be downloaded manually because earlier builds only linked
-to the release page.
+**Updates.** Packaged Linux AppImages and Windows NSIS installers check the
+GitHub `latest` release on launch. The update dialog downloads the new package
+and offers to restart and install it. The release workflow assigns each build a
+higher version and publishes electron-builder's `latest-linux.yml` and
+`latest.yml` metadata beside their packages. Other Linux package formats are
+not built or updated by this workflow. Existing Linux installs must manually
+install the first updater-enabled AppImage; Windows users install the first
+published Windows installer, then later updates can be applied in-app.

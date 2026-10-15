@@ -91,9 +91,12 @@ function publishUpdateState(nextState) {
   }
 }
 
-/** Configure updates only for the Linux AppImage target we actually ship. */
-function configureAppImageUpdater() {
-  if (process.platform !== 'linux' || !app.isPackaged || !process.env.APPIMAGE) {
+/** Configure updates for the packaged Linux AppImage and Windows NSIS builds. */
+function configureUpdater() {
+  const supportedTarget =
+    (process.platform === 'linux' && Boolean(process.env.APPIMAGE)) ||
+    process.platform === 'win32';
+  if (!app.isPackaged || !supportedTarget) {
     return false;
   }
 
@@ -375,7 +378,7 @@ async function main() {
     return;
   }
 
-  const canUpdate = configureAppImageUpdater();
+  const canUpdate = configureUpdater();
   createWindow(base);
   if (canUpdate) {
     autoUpdater.checkForUpdates().catch((cause) => {

@@ -101,6 +101,19 @@ linux:
       # Appended to the generated entry's own keys rather than replacing them.
       StartupWMClass: Streamly
 
+win:
+  target:
+    - nsis
+  icon: desktop/resources/icon.ico
+  artifactName: Streamly-Setup-${version}.${ext}
+  verifyUpdateCodeSignature: false
+
+nsis:
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
 # `icon` is not named because `directories.buildResources` — `desktop/resources`
 # — is searched for `icon.png` first, and that is where it is. It is a 1024×1024
 # raster generated from the SVG beside it, which is the source: edit

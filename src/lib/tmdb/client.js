@@ -1,3 +1,4 @@
+import { unstable_cache } from 'next/cache';
 import site from '@config/site';
 
 /**
@@ -48,7 +49,8 @@ function credentials() {
  * @param {number} [options.revalidate]  cache lifetime in seconds
  */
 export async function tmdbFetch(path, { params = {}, revalidate } = {}) {
-  const { token, key } = credentials();
+  // Fail fast (outside the cache) when no credentials are configured.
+  credentials();
 
   const url = new URL(`${BASE_URL}/${String(path).replace(/^\/+/, '')}`);
 
@@ -64,6 +66,26 @@ export async function tmdbFetch(path, { params = {}, revalidate } = {}) {
     url.searchParams.set(name, String(value));
   }
 
+  return cachedRequest(url.href, revalidate ?? site.tmdb.revalidate.catalog);
+}
+
+/**
+ * Caches the response under the credential-free URL.
+ *
+ * The v3 key can only travel as an `api_key` query param, and Next's fetch
+ * cache records each request's full URL in `.next/cache/fetch-cache` — which
+ * is deployed with the build, putting the key in plain text in the output.
+ * `unstable_cache` stores only the result, and fetches inside it bypass the
+ * fetch cache, so the key is added here and never written anywhere.
+ */
+function cachedRequest(href, revalidate) {
+  return unstable_cache(requestTmdb, ['tmdb'], { revalidate })(href);
+}
+
+async function requestTmdb(href) {
+  const { token, key } = credentials();
+  const url = new URL(href);
+
   if (!token) url.searchParams.set('api_key', key);
 
   const response = await fetch(url, {
@@ -71,13 +93,12 @@ export async function tmdbFetch(path, { params = {}, revalidate } = {}) {
       accept: 'application/json',
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    next: { revalidate: revalidate ?? site.tmdb.revalidate.catalog },
   });
 
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
     throw new TmdbError(
-      detail.status_message ?? `TMDB request failed for /${path}`,
+      detail.status_message ?? `TMDB request failed for ${url.pathname}`,
       response.status,
     );
   }

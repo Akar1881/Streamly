@@ -2,3 +2,8 @@
   # NEXT_PUBLIC_SITE_URL is the site's public origin and is inlined into the
   # client bundle by design, so it must not trip secrets scanning.
   SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SITE_URL"
+  # Turbopack's persistent build cache records the server-side env vars it
+  # read (TMDB_API_KEY etc.) so it can invalidate on change. The cache is
+  # restored between builds but never deployed, so skip it rather than
+  # exempting the keys themselves — a leak into real output still fails.
+  SECRETS_SCAN_OMIT_PATHS = ".netlify/.next/cache,.next/cache"

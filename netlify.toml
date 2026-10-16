@@ -1,0 +1,4 @@
+[build.environment]
+  # NEXT_PUBLIC_SITE_URL is the site's public origin and is inlined into the
+  # client bundle by design, so it must not trip secrets scanning.
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SITE_URL"

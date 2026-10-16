@@ -10,7 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@vercel/blob": "^2.8.1",
+    "@netlify/blobs": "^11.1.4",
     "aws4fetch": "^1.0.20",
     "cheerio-without-node-native": "^0.20.2",
     "hls.js": "^1.7.3",

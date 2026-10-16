@@ -18,12 +18,12 @@
  *  backend. There are three, and which one is in use is a deployment question
  *  rather than a code one:
  *
- *    blob.js   Vercel Blob — what production runs on, and the only one that
- *              needs no payment method. The *viewer's browser* fetches the
- *              file, so it has to be somewhere shared that outlives the
+ *    blob.js   Netlify Blobs — what production runs on, and the one that
+ *              needs no configuration at all. The *viewer's browser* fetches
+ *              the file, so it has to be somewhere shared that outlives the
  *              request which wrote it.
- *    r2.js     Cloudflare R2 — the same job, for anyone with a card and more
- *              than a gigabyte of subtitles. Charged nothing for egress.
+ *    r2.js     Cloudflare R2 — the same job, for anyone who would rather the
+ *              player fetched straight from a public bucket.
  *    disk.js   the filesystem — what a laptop runs on, because it needs no
  *              account and the files are right there to read.
  *

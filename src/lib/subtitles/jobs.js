@@ -42,8 +42,8 @@ if (process.env.NODE_ENV === 'production' && site.subtitles.enabled && !isShared
   console.warn(
     '[subtitles] No object storage is configured, so translated subtitles are being ' +
       'written to the local filesystem. A serverless host cannot serve those back to a ' +
-      "viewer's browser. Create a Blob store in the Vercel dashboard and link it to this " +
-      'project — see .env.example.',
+      "viewer's browser. Deploy to Netlify (Netlify Blobs is used automatically) or " +
+      'configure Cloudflare R2 — see .env.example.',
   );
 }
 

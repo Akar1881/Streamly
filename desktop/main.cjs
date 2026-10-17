@@ -91,6 +91,203 @@ function publishUpdateState(nextState) {
   }
 }
 
+/** The freedesktop launcher directory for the user running the app. */
+function applicationsDirectory() {
+  const dataHome = process.env.XDG_DATA_HOME || path.join(app.getPath('home'), '.local', 'share');
+  return path.join(dataHome, 'applications');
+}
+
+/** `Streamly-0.1.8.AppImage` → `0.1.8`, falling back to the packed version. */
+function appImageVersion(filePath) {
+  return path.basename(filePath).match(/\d+\.\d+\.\d+/)?.[0] ?? app.getVersion();
+}
+
+/** The AppImage path a launcher launches, if it names one. */
+function entryAppImagePath(contents) {
+  return (
+    contents.match(/^Exec="([^"\n]+\.AppImage)"/m)?.[1] ??
+    contents.match(/^Exec=([^\s"\n]+\.AppImage)/m)?.[1] ??
+    contents.match(/^TryExec=([^\s"\n]+\.AppImage)/m)?.[1]
+  );
+}
+
+/** The version named by `Icon=streamly-<version>`, if the icon is versioned. */
+function entryIconVersion(contents) {
+  return contents.match(/^Icon=streamly-(\d+\.\d+\.\d+)\s*$/m)?.[1];
+}
+
+/**
+ * True for a launcher this app owns.
+ *
+ * A versioned filename is the app's own integration; anything else has to
+ * actually name Streamly and launch an AppImage. That leaves a `streamly.desktop`
+ * installed by a package manager — `Exec=streamly`, no AppImage — alone, since
+ * updating is the package manager's business there.
+ */
+function isAppDesktopEntry(name, contents) {
+  if (/^streamly-.*\.desktop$/i.test(name)) return true;
+  return /^Name=Streamly\s*$/m.test(contents) && entryAppImagePath(contents) != null;
+}
+
+/**
+ * Points an entry at `appImagePath` and names it for `version`.
+ *
+ * `AppRun` entries name no AppImage, which only happens for a launcher built
+ * from the archive itself; those get an absolute Exec in its place.
+ */
+function rewrittenDesktopEntry(contents, appImagePath, version) {
+  const previousPath = entryAppImagePath(contents);
+  let updated = contents.replace(/^X-AppImage-Version=.*$/m, `X-AppImage-Version=${version}`);
+
+  if (previousPath) {
+    updated = updated.replaceAll(previousPath, appImagePath);
+  } else {
+    updated = updated.replace(/^Exec=.*$/m, `Exec="${appImagePath}" --no-sandbox %U`);
+  }
+
+  return updated;
+}
+
+/**
+ * Makes sure an icon named for `version` resolves.
+ *
+ * Integration writes `streamly-<version>.png` beside `streamly-<version>.desktop`
+ * — the picture itself does not change between releases — but an entry can end
+ * up pointing at a version whose file was never written (integration rewrote
+ * the entry in place while the icon stayed behind). Adopting any existing
+ * Streamly icon under the current name keeps the launcher's picture rather
+ * than leaving it blank. Returns whether a matching icon exists afterwards.
+ */
+function ensureLauncherIcon(version) {
+  const dataHome = process.env.XDG_DATA_HOME || path.join(app.getPath('home'), '.local', 'share');
+  const hicolor = path.join(dataHome, 'icons', 'hicolor');
+
+  let sizes;
+  try {
+    sizes = fs.readdirSync(hicolor);
+  } catch {
+    return false;
+  }
+
+  let found = false;
+  for (const size of sizes) {
+    const apps = path.join(hicolor, size, 'apps');
+    let files;
+    try {
+      files = fs.readdirSync(apps);
+    } catch {
+      continue;
+    }
+
+    for (const extension of ['png', 'svg']) {
+      const wanted = `streamly-${version}.${extension}`;
+      if (files.includes(wanted)) {
+        found = true;
+        continue;
+      }
+
+      const candidate = files.find((file) =>
+        new RegExp(`^streamly-[^/]+\\.${extension}$`, 'i').test(file),
+      );
+      if (!candidate) continue;
+
+      try {
+        fs.renameSync(path.join(apps, candidate), path.join(apps, wanted));
+        found = true;
+      } catch (cause) {
+        console.warn(`[updater] Could not refresh launcher icon ${candidate}:`, cause);
+      }
+    }
+  }
+
+  return found;
+}
+
+/**
+ * Makes the app's launcher match the AppImage running now.
+ *
+ * AppImage integration writes an entry named for the version it integrated —
+ * `streamly-0.1.6.desktop` — and on an in-place update rewrites the contents
+ * but leaves that name behind, so the menu ends up calling the app 0.1.6 while
+ * it opens 0.1.8. A second update from a build that did not know how to rename
+ * it leaves a stale entry for every version. So the entry is treated as one
+ * thing with a moving name: the entry that belongs to this app is rewritten to
+ * point at the running AppImage, named for the running version, and any other
+ * Streamly entry is removed.
+ *
+ * Run at startup as well as on `appimage-filename-updated`: the update itself
+ * is installed by the *previous* version, so relying on the event alone would
+ * leave any entry that version did not know how to fix in place forever.
+ */
+function syncAppImageDesktopEntry(appImagePath = process.env.APPIMAGE) {
+  if (!appImagePath) return;
+
+  const version = appImageVersion(appImagePath);
+  const directory = applicationsDirectory();
+
+  let names;
+  try {
+    names = fs.readdirSync(directory).filter((name) => name.endsWith('.desktop'));
+  } catch {
+    return;
+  }
+
+  const entries = [];
+  for (const name of names) {
+    const entryPath = path.join(directory, name);
+    let contents;
+    try {
+      contents = fs.readFileSync(entryPath, 'utf8');
+    } catch {
+      continue;
+    }
+    if (isAppDesktopEntry(name, contents)) entries.push({ name, entryPath, contents });
+  }
+  if (entries.length === 0) return;
+
+  /** Keep the entry that launches this AppImage — the one the user clicks. */
+  const keep =
+    entries.find((entry) => entryAppImagePath(entry.contents) === appImagePath) ??
+    entries.reduce((newest, entry) =>
+      appImageVersion(entry.name).localeCompare(appImageVersion(newest.name), undefined, {
+        numeric: true,
+      }) > 0
+        ? entry
+        : newest,
+    );
+
+  let updated = rewrittenDesktopEntry(keep.contents, appImagePath, version);
+
+  /**
+   * The icon is named for the version too. Point it at the running version
+   * only when a file resolves afterwards; otherwise leave the name the entry
+   * already had, which at least still resolves.
+   */
+  if (entryIconVersion(keep.contents) != null && ensureLauncherIcon(version)) {
+    updated = updated.replace(/^Icon=.*$/m, `Icon=streamly-${version}`);
+  }
+
+  const keepPath = path.join(directory, `streamly-${version}.desktop`);
+  const temporaryPath = `${keepPath}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temporaryPath, updated, { mode: 0o644 });
+    fs.renameSync(temporaryPath, keepPath);
+  } catch (cause) {
+    fs.rmSync(temporaryPath, { force: true });
+    console.warn(`[updater] Could not refresh desktop launcher ${keepPath}:`, cause);
+    return;
+  }
+
+  for (const entry of entries) {
+    if (entry.entryPath === keepPath) continue;
+    try {
+      fs.unlinkSync(entry.entryPath);
+    } catch (cause) {
+      console.warn(`[updater] Could not remove stale desktop launcher ${entry.entryPath}:`, cause);
+    }
+  }
+}
+
 /** Configure updates for the packaged Linux AppImage and Windows NSIS builds. */
 function configureUpdater() {
   const supportedTarget =
@@ -106,6 +303,7 @@ function configureUpdater() {
   if (process.platform === 'linux') {
     autoUpdater.on('appimage-filename-updated', (filePath) => {
       process.env.APPIMAGE = filePath;
+      syncAppImageDesktopEntry(filePath);
     });
   }
 
@@ -161,6 +359,22 @@ function configureUpdater() {
       return true;
     });
     updateHandlersRegistered = true;
+  }
+
+  /**
+   * Repair the launcher on every launch, not only on the update event.
+   *
+   * The update that put this build in place was installed by the *previous*
+   * version, which cannot have known how this one wants the entry named. This
+   * is what turns "the menu still says 0.1.6" into a corrected entry without
+   * waiting for another release to go by.
+   */
+  if (process.platform === 'linux') {
+    try {
+      syncAppImageDesktopEntry();
+    } catch (cause) {
+      console.warn('[updater] Could not reconcile the desktop launcher:', cause);
+    }
   }
 
   return true;
